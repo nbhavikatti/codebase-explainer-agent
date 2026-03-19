@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Optional
 
+import certifi
+import httpx
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -14,7 +16,10 @@ _client: Optional[OpenAI] = None
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        _client = OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            http_client=httpx.Client(verify=certifi.where()),
+        )
     return _client
 ANALYSIS_SYSTEM_PROMPT = """You are an expert software engineer who analyzes codebases. 
 You will be given information about a GitHub repository including its file tree, detected tech stack, and contents of key files.
