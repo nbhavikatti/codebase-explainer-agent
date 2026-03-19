@@ -95,7 +95,7 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             }))
 
             await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Generating AI analysis (this may take a moment)..."}))
-            analysis_json = await asyncio.to_thread(generate_analysis, file_tree_str, project_types, file_contents, repo_url)
+            analysis_json = await generate_analysis(file_tree_str, project_types, file_contents, repo_url)
             try:
                 analysis = json.loads(analysis_json)
             except json.JSONDecodeError:
@@ -168,8 +168,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=404, detail="Repository not analyzed yet. Please analyze it first.")
 
     cached = _repo_cache[repo_url]
-    answer = await asyncio.to_thread(
-        chat_about_repo,
+    answer = await chat_about_repo(
         request.question,
         request.context,
         cached["file_tree_str"],
