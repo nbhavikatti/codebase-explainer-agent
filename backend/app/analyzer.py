@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
-from git import Repo
 # Files/dirs to always skip
 SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".next", "dist", "build",
@@ -80,13 +82,27 @@ UNIVERSAL_FILES = [
     ".github/workflows", ".gitignore",
 ]
 def clone_repo(repo_url: str) -> str:
-    """Clone a GitHub repo to a temp directory. Returns the path."""
+    """Download a GitHub repo as a zip and extract to a temp directory. Returns the path."""
     tmp_dir = tempfile.mkdtemp(prefix="codebase_explainer_")
-    # Normalize URL
-    url = repo_url.strip().rstrip("/")
-    if not url.endswith(".git"):
-        url = url + ".git"
-    Repo.clone_from(url, tmp_dir, depth=1)
+    # Convert https://github.com/owner/repo to zip URL
+    url = repo_url.strip().rstrip("/").removesuffix(".git")
+    parts = url.rstrip("/").split("/")
+    owner, repo = parts[-2], parts[-1]
+    zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip"
+    try:
+        with urllib.request.urlopen(zip_url) as response:
+            zip_data = response.read()
+    except Exception:
+        # Try 'master' branch if 'main' fails
+        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/master.zip"
+        with urllib.request.urlopen(zip_url) as response:
+            zip_data = response.read()
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+        zf.extractall(tmp_dir)
+    # The zip extracts into a subdirectory like repo-main/ or repo-master/
+    extracted = [d for d in os.listdir(tmp_dir) if os.path.isdir(os.path.join(tmp_dir, d))]
+    if extracted:
+        return os.path.join(tmp_dir, extracted[0])
     return tmp_dir
 def cleanup_repo(repo_path: str) -> None:
     """Remove the cloned repo."""
