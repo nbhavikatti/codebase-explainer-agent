@@ -27,7 +27,6 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS - allow all origins for local development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,7 +35,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory store for analyzed repos (keyed by repo URL)
 _repo_cache: dict[str, dict] = {}
 
 
@@ -45,99 +43,100 @@ def _sse_event(event: str, data: dict) -> str:
 
 
 async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
-    """Stream analysis steps as SSE events."""
-    repo_path = None
-    try:
-        # Step 1: Clone
-        yield _sse_event("step", {"step": "cloning", "message": "Cloning repository..."})
-        await asyncio.sleep(0.1)
+    """Stream analysis steps as SSE events, with keepalive pings for long steps."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def worker():
+        repo_path = None
         try:
-            repo_path = await asyncio.to_thread(clone_repo, repo_url)
+            await queue.put(_sse_event("step", {"step": "cloning", "message": "Cloning repository..."}))
+            try:
+                repo_path = await asyncio.to_thread(clone_repo, repo_url)
+            except Exception as e:
+                await queue.put(_sse_event("error", {"message": f"Failed to clone repository: {type(e).__name__}: {str(e)}"}))
+                return
+            await queue.put(_sse_event("step", {"step": "cloning", "message": "Repository cloned successfully", "done": True}))
+
+            await queue.put(_sse_event("step", {"step": "file_tree", "message": "Inspecting file tree..."}))
+            file_tree = await asyncio.to_thread(build_file_tree, repo_path)
+            file_tree_str = format_file_tree_string(file_tree)
+            file_count = len(file_tree)
+            await queue.put(_sse_event("step", {
+                "step": "file_tree",
+                "message": f"Found {file_count} files",
+                "done": True,
+                "data": {"file_count": file_count, "tree_preview": file_tree_str[:2000]},
+            }))
+
+            await queue.put(_sse_event("step", {"step": "detect_type", "message": "Detecting project type and tech stack..."}))
+            project_types = await asyncio.to_thread(detect_project_type, repo_path, file_tree)
+            await queue.put(_sse_event("step", {
+                "step": "detect_type",
+                "message": f"Detected: {', '.join(project_types)}",
+                "done": True,
+                "data": {"project_types": project_types},
+            }))
+
+            await queue.put(_sse_event("step", {"step": "select_files", "message": "Selecting important files to analyze..."}))
+            important_files = await asyncio.to_thread(select_important_files, repo_path, file_tree, project_types)
+            await queue.put(_sse_event("step", {
+                "step": "select_files",
+                "message": f"Selected {len(important_files)} key files",
+                "done": True,
+                "data": {"files": important_files},
+            }))
+
+            await queue.put(_sse_event("step", {"step": "read_files", "message": "Reading file contents..."}))
+            file_contents = await asyncio.to_thread(read_file_contents, repo_path, important_files)
+            await queue.put(_sse_event("step", {
+                "step": "read_files",
+                "message": f"Read {len(file_contents)} files",
+                "done": True,
+            }))
+
+            await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Generating AI analysis (this may take a moment)..."}))
+            analysis_json = await asyncio.to_thread(generate_analysis, file_tree_str, project_types, file_contents, repo_url)
+            try:
+                analysis = json.loads(analysis_json)
+            except json.JSONDecodeError:
+                analysis = {"error": "Failed to parse analysis", "raw": analysis_json}
+
+            await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Analysis complete!", "done": True}))
+
+            _repo_cache[repo_url] = {
+                "analysis": analysis,
+                "file_tree_str": file_tree_str,
+                "project_types": project_types,
+                "file_contents": file_contents,
+            }
+
+            await queue.put(_sse_event("result", {"analysis": analysis}))
+
         except Exception as e:
-            yield _sse_event("error", {"message": f"Failed to clone repository: {str(e)}"})
-            return
-        yield _sse_event("step", {"step": "cloning", "message": "Repository cloned successfully", "done": True})
+            await queue.put(_sse_event("error", {"message": f"Analysis failed: {type(e).__name__}: {str(e)}"}))
+        finally:
+            if repo_path:
+                await asyncio.to_thread(cleanup_repo, repo_path)
+            await queue.put(None)  # sentinel
 
-        # Step 2: Build file tree
-        yield _sse_event("step", {"step": "file_tree", "message": "Inspecting file tree..."})
-        await asyncio.sleep(0.1)
-        file_tree = await asyncio.to_thread(build_file_tree, repo_path)
-        file_tree_str = format_file_tree_string(file_tree)
-        file_count = len(file_tree)
-        yield _sse_event("step", {
-            "step": "file_tree",
-            "message": f"Found {file_count} files",
-            "done": True,
-            "data": {"file_count": file_count, "tree_preview": file_tree_str[:2000]},
-        })
+    async def pinger():
+        """Send a keepalive comment every 8 seconds to prevent proxy timeouts."""
+        while True:
+            await asyncio.sleep(8)
+            await queue.put(": ping\n\n")
 
-        # Step 3: Detect project type
-        yield _sse_event("step", {"step": "detect_type", "message": "Detecting project type and tech stack..."})
-        await asyncio.sleep(0.1)
-        project_types = await asyncio.to_thread(detect_project_type, repo_path, file_tree)
-        yield _sse_event("step", {
-            "step": "detect_type",
-            "message": f"Detected: {', '.join(project_types)}",
-            "done": True,
-            "data": {"project_types": project_types},
-        })
+    pinger_task = asyncio.ensure_future(pinger())
+    worker_task = asyncio.ensure_future(worker())
 
-        # Step 4: Select important files
-        yield _sse_event("step", {"step": "select_files", "message": "Selecting important files to analyze..."})
-        await asyncio.sleep(0.1)
-        important_files = await asyncio.to_thread(
-            select_important_files, repo_path, file_tree, project_types
-        )
-        yield _sse_event("step", {
-            "step": "select_files",
-            "message": f"Selected {len(important_files)} key files",
-            "done": True,
-            "data": {"files": important_files},
-        })
-
-        # Step 5: Read file contents
-        yield _sse_event("step", {"step": "read_files", "message": "Reading file contents..."})
-        await asyncio.sleep(0.1)
-        file_contents = await asyncio.to_thread(read_file_contents, repo_path, important_files)
-        yield _sse_event("step", {
-            "step": "read_files",
-            "message": f"Read {len(file_contents)} files",
-            "done": True,
-        })
-
-        # Step 6: LLM Analysis
-        yield _sse_event("step", {"step": "llm_analysis", "message": "Generating AI analysis (this may take a moment)..."})
-        await asyncio.sleep(0.1)
-        analysis_json = await asyncio.to_thread(
-            generate_analysis, file_tree_str, project_types, file_contents, repo_url
-        )
-        try:
-            analysis = json.loads(analysis_json)
-        except json.JSONDecodeError:
-            analysis = {"error": "Failed to parse analysis", "raw": analysis_json}
-
-        yield _sse_event("step", {
-            "step": "llm_analysis",
-            "message": "Analysis complete!",
-            "done": True,
-        })
-
-        # Cache the analysis context for chat
-        _repo_cache[repo_url] = {
-            "analysis": analysis,
-            "file_tree_str": file_tree_str,
-            "project_types": project_types,
-            "file_contents": file_contents,
-        }
-
-        # Final result
-        yield _sse_event("result", {"analysis": analysis})
-
-    except Exception as e:
-        yield _sse_event("error", {"message": f"Analysis failed: {str(e)}"})
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
     finally:
-        if repo_path:
-            await asyncio.to_thread(cleanup_repo, repo_path)
+        pinger_task.cancel()
+        worker_task.cancel()
 
 
 @app.get("/healthz")
@@ -147,7 +146,6 @@ async def healthz():
 
 @app.post("/analyze")
 async def analyze(request: AnalyzeRequest):
-    """Start analysis of a GitHub repo. Returns SSE stream."""
     repo_url = request.repo_url.strip()
     if not repo_url.startswith("https://github.com/"):
         raise HTTPException(status_code=400, detail="Please provide a valid public GitHub URL")
@@ -165,7 +163,6 @@ async def analyze(request: AnalyzeRequest):
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    """Chat about an analyzed repo."""
     repo_url = request.repo_url.strip()
     if repo_url not in _repo_cache:
         raise HTTPException(status_code=404, detail="Repository not analyzed yet. Please analyze it first.")
@@ -183,14 +180,13 @@ async def chat(request: ChatRequest):
     return {"answer": answer}
 
 
-# Serve frontend static files (for combined deployment)
+# Serve frontend static files
 STATIC_DIR = Path(__file__).parent.parent / "static"
 if STATIC_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        """Serve frontend SPA - catch all non-API routes."""
         file_path = STATIC_DIR / full_path
         if file_path.is_file():
             return FileResponse(str(file_path))
