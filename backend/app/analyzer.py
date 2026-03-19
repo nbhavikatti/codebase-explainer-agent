@@ -81,25 +81,30 @@ UNIVERSAL_FILES = [
     "Makefile", "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
     ".github/workflows", ".gitignore",
 ]
+def _download_zip(url: str) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": "codebase-explainer/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as response:
+        return response.read()
+
+
 def clone_repo(repo_url: str) -> str:
     """Download a GitHub repo as a zip and extract to a temp directory. Returns the path."""
     tmp_dir = tempfile.mkdtemp(prefix="codebase_explainer_")
-    # Convert https://github.com/owner/repo to zip URL
     url = repo_url.strip().rstrip("/").removesuffix(".git")
     parts = url.rstrip("/").split("/")
     owner, repo = parts[-2], parts[-1]
-    zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip"
-    try:
-        with urllib.request.urlopen(zip_url) as response:
-            zip_data = response.read()
-    except Exception:
-        # Try 'master' branch if 'main' fails
-        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/master.zip"
-        with urllib.request.urlopen(zip_url) as response:
-            zip_data = response.read()
+    zip_data = None
+    for branch in ("main", "master"):
+        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
+        try:
+            zip_data = _download_zip(zip_url)
+            break
+        except Exception:
+            continue
+    if zip_data is None:
+        raise RuntimeError(f"Could not download repository. Check that {repo_url} is a valid public GitHub repo.")
     with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
         zf.extractall(tmp_dir)
-    # The zip extracts into a subdirectory like repo-main/ or repo-master/
     extracted = [d for d in os.listdir(tmp_dir) if os.path.isdir(os.path.join(tmp_dir, d))]
     if extracted:
         return os.path.join(tmp_dir, extracted[0])
