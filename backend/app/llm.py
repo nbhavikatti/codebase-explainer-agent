@@ -21,7 +21,7 @@ _client: Optional[AsyncOpenAI] = None
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
         if not api_key:
             raise RuntimeError(
                 "OPENAI_API_KEY is not set. Set it in the environment (recommended) "
