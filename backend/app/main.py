@@ -9,7 +9,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
 
 from app.models import AnalyzeRequest, ChatRequest
 from app.analyzer import (
@@ -22,8 +21,6 @@ from app.analyzer import (
     format_file_tree_string,
 )
 from app.llm import generate_analysis, chat_about_repo
-
-load_dotenv()
 
 app = FastAPI()
 
@@ -95,7 +92,14 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             }))
 
             await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Generating AI analysis (this may take a moment)..."}))
-            analysis_json = await generate_analysis(file_tree_str, project_types, file_contents, repo_url)
+            try:
+                analysis_json = await asyncio.wait_for(
+                    generate_analysis(file_tree_str, project_types, file_contents, repo_url),
+                    timeout=180,
+                )
+            except asyncio.TimeoutError:
+                await queue.put(_sse_event("error", {"message": "AI analysis timed out. Try a smaller repo or increase the server timeout."}))
+                return
             try:
                 analysis = json.loads(analysis_json)
             except json.JSONDecodeError:

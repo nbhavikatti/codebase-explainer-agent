@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Optional
 
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-load_dotenv()
+_HERE = Path(__file__).resolve().parent
+# Prefer local env files when running without a process manager.
+# Order matters: repo-level backend/.env first, then app/.env overrides.
+load_dotenv(_HERE.parent / ".env")
+load_dotenv(_HERE / ".env", override=True)
 
 _client: Optional[AsyncOpenAI] = None
 
@@ -14,7 +19,13 @@ _client: Optional[AsyncOpenAI] = None
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is not set. Set it in the environment (recommended) "
+                "or in backend/.env before running the backend."
+            )
+        _client = AsyncOpenAI(api_key=api_key, timeout=60, max_retries=2)
     return _client
 
 
