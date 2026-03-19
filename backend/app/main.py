@@ -117,7 +117,11 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             await queue.put(_sse_event("result", {"analysis": analysis}))
 
         except Exception as e:
-            await queue.put(_sse_event("error", {"message": f"Analysis failed: {type(e).__name__}: {str(e)}"}))
+            cause = e.__cause__ or e.__context__
+            msg = f"Analysis failed: {type(e).__name__}: {str(e)}"
+            if cause:
+                msg += f" | Caused by: {type(cause).__name__}: {str(cause)}"
+            await queue.put(_sse_event("error", {"message": msg}))
         finally:
             if repo_path:
                 await asyncio.to_thread(cleanup_repo, repo_path)
