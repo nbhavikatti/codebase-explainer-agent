@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import certifi
 import httpx
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -18,7 +17,7 @@ def _get_client() -> OpenAI:
     if _client is None:
         _client = OpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
-            http_client=httpx.Client(verify=certifi.where()),
+            http_client=httpx.Client(verify=False),
         )
     return _client
 ANALYSIS_SYSTEM_PROMPT = """You are an expert software engineer who analyzes codebases. 
