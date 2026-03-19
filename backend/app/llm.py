@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import httpx
+import certifi
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
@@ -25,7 +27,12 @@ def _get_client() -> AsyncOpenAI:
                 "OPENAI_API_KEY is not set. Set it in the environment (recommended) "
                 "or in backend/.env before running the backend."
             )
-        _client = AsyncOpenAI(api_key=api_key, timeout=60, max_retries=2)
+        _client = AsyncOpenAI(
+            api_key=api_key,
+            timeout=60,
+            max_retries=2,
+            http_client=httpx.AsyncClient(verify=certifi.where()),
+        )
     return _client
 
 
