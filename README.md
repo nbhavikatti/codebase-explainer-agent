@@ -84,4 +84,3 @@ For production, build the frontend and run only the backend — it serves the st
 | `OPENAI_API_KEY` | Yes | OpenAI API key (set in env or `backend/.env`) |
 | `PORT` | No | Server port (defaults to 8000) |
 | `VITE_API_URL` | No | Custom API URL for the frontend |
->>>>>>> a948e6ae178c1e44317a42af31ceac0e78288eb2
