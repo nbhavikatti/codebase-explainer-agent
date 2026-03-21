@@ -6,8 +6,8 @@ An AI-powered web app that analyzes public GitHub repositories and generates com
 
 ## Tech Stack
 
-**Backend:** Python, FastAPI, OpenAI API (gpt-4o-mini), Uvicorn
-**Frontend:** React, TypeScript, Vite, Tailwind CSS
+**Backend:** Python, FastAPI, OpenAI API (gpt-4o-mini), Uvicorn<br>
+**Frontend:** React, TypeScript, Vite, Tailwind CSS<br>
 **Deployment:** Nixpacks, Heroku-compatible
 
 ## Project Structure
