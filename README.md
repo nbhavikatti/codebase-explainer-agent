@@ -1,4 +1,5 @@
-<<<<<<< HEAD
+Currently live at https://codebase-explainer-agent-production.up.railway.app/
+
 # Codebase Explainer Agent
 
 An AI-powered web app that analyzes public GitHub repositories and generates comprehensive explanations of their codebase. Submit a repo URL, watch real-time progress as the AI clones and analyzes it, then explore a detailed breakdown of the project's architecture, tech stack, key files, and more. You can also ask follow-up questions through an interactive chat interface.
@@ -83,6 +84,4 @@ For production, build the frontend and run only the backend — it serves the st
 | `OPENAI_API_KEY` | Yes | OpenAI API key (set in env or `backend/.env`) |
 | `PORT` | No | Server port (defaults to 8000) |
 | `VITE_API_URL` | No | Custom API URL for the frontend |
-=======
-Currently live at https://codebase-explainer-agent-production.up.railway.app/
 >>>>>>> a948e6ae178c1e44317a42af31ceac0e78288eb2
