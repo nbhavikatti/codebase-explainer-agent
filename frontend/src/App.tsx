@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   Code2,
   GitBranch,
@@ -38,30 +39,6 @@ function parseApiUrl(raw: string): { url: string; headers: Record<string, string
 }
 
 const { url: API_URL, headers: AUTH_HEADERS } = parseApiUrl(RAW_API_URL);
-
-function renderMarkdownInline(text: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  // Match **bold**, *italic*, or plain text segments
-  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
-  let lastIndex = 0;
-  let match;
-  let key = 0;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    if (match[2]) {
-      parts.push(<strong key={key++} className="font-semibold text-white">{match[2]}</strong>);
-    } else if (match[3]) {
-      parts.push(<em key={key++} className="italic">{match[3]}</em>);
-    }
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  return parts;
-}
 
 interface StepInfo {
   step: string;
@@ -421,7 +398,7 @@ function App() {
             {/* Tech Stack Badges */}
             {analysis.tech_stack && analysis.tech_stack.length > 0 && (
               <div className="mb-6">
-                <p className="text-center text-sm text-gray-400 mb-3">Technologies used in this repository</p>
+                <p className="text-center text-sm font-semibold text-white/60 uppercase tracking-widest mb-3">Tech Stack</p>
                 <div className="flex flex-wrap gap-2 justify-center">
                   {analysis.tech_stack.map((tech) => (
                     <span
@@ -602,16 +579,13 @@ function App() {
                               : "bg-white/5 text-white/70 rounded-bl-md border border-white/10"
                           }`}
                         >
-                          <div className="whitespace-pre-line">
-                            {msg.role === "assistant"
-                              ? msg.content.split("\n").map((line, li) => (
-                                  <span key={li}>
-                                    {li > 0 && "\n"}
-                                    {renderMarkdownInline(line)}
-                                  </span>
-                                ))
-                              : msg.content}
-                          </div>
+                          {msg.role === "assistant" ? (
+                            <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-blue-300 prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10">
+                              <ReactMarkdown>{msg.content}</ReactMarkdown>
+                            </div>
+                          ) : (
+                            <div className="whitespace-pre-line">{msg.content}</div>
+                          )}
                         </div>
                       </div>
                     ))}
