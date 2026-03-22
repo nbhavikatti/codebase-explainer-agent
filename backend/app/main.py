@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import asyncio
+import time
+from collections import defaultdict
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +35,29 @@ app.add_middleware(
 )
 
 _repo_cache: dict[str, dict] = {}
+
+# --- Rate limiting ---
+_rate_limits: dict[str, dict] = {
+    "/analyze": {"max_requests": 8, "window_seconds": 600},
+    "/chat": {"max_requests": 30, "window_seconds": 600},
+}
+_request_log: dict[str, list[float]] = defaultdict(list)
+
+_RATE_LIMIT_MSG = "Rate limit reached. Please wait a few minutes and try again."
+
+
+def _check_rate_limit(ip: str, endpoint: str) -> None:
+    config = _rate_limits.get(endpoint)
+    if not config:
+        return
+    key = f"{ip}:{endpoint}"
+    now = time.time()
+    cutoff = now - config["window_seconds"]
+    # Prune old entries
+    _request_log[key] = [t for t in _request_log[key] if t > cutoff]
+    if len(_request_log[key]) >= config["max_requests"]:
+        raise HTTPException(status_code=429, detail=_RATE_LIMIT_MSG)
+    _request_log[key].append(now)
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -149,7 +174,8 @@ async def healthz():
 
 
 @app.post("/analyze")
-async def analyze(request: AnalyzeRequest):
+async def analyze(request: AnalyzeRequest, req: Request):
+    _check_rate_limit(req.client.host if req.client else "unknown", "/analyze")
     repo_url = request.repo_url.strip()
     if not repo_url.startswith("https://github.com/"):
         raise HTTPException(status_code=400, detail="Please provide a valid public GitHub URL")
@@ -166,7 +192,8 @@ async def analyze(request: AnalyzeRequest):
 
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, req: Request):
+    _check_rate_limit(req.client.host if req.client else "unknown", "/chat")
     repo_url = request.repo_url.strip()
     if repo_url not in _repo_cache:
         raise HTTPException(status_code=404, detail="Repository not analyzed yet. Please analyze it first.")
