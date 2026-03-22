@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import asyncio
+import logging
 import time
 from collections import defaultdict
 from pathlib import Path
 from typing import AsyncGenerator
+
+logger = logging.getLogger("codebase-explainer")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,6 +60,7 @@ def _check_rate_limit(ip: str, endpoint: str) -> None:
     # Prune old entries
     _request_log[key] = [t for t in _request_log[key] if t > cutoff]
     if len(_request_log[key]) >= config["max_requests"]:
+        logger.warning("rate_limit_hit | ip=%s endpoint=%s", ip, endpoint)
         raise HTTPException(status_code=429, detail=_RATE_LIMIT_MSG)
     _request_log[key].append(now)
 
@@ -70,11 +75,14 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
 
     async def worker():
         repo_path = None
+        t_start = time.time()
+        logger.info("analyze_start | repo=%s", repo_url)
         try:
             await queue.put(_sse_event("step", {"step": "cloning", "message": "Cloning repository..."}))
             try:
                 repo_path = await asyncio.to_thread(clone_repo, repo_url)
             except Exception as e:
+                logger.error("analyze_failure | repo=%s latency=%.1fs error=clone_failed: %s", repo_url, time.time() - t_start, str(e)[:200])
                 await queue.put(_sse_event("error", {"message": f"Failed to clone repository: {type(e).__name__}: {str(e)}"}))
                 return
             await queue.put(_sse_event("step", {"step": "cloning", "message": "Repository cloned successfully", "done": True}))
@@ -123,6 +131,7 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
                     timeout=180,
                 )
             except asyncio.TimeoutError:
+                logger.error("analyze_failure | repo=%s latency=%.1fs error=llm_timeout", repo_url, time.time() - t_start)
                 await queue.put(_sse_event("error", {"message": "AI analysis timed out. Try a smaller repo or increase the server timeout."}))
                 return
             try:
@@ -140,8 +149,10 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             }
 
             await queue.put(_sse_event("result", {"analysis": analysis}))
+            logger.info("analyze_success | repo=%s latency=%.1fs", repo_url, time.time() - t_start)
 
         except Exception as e:
+            logger.error("analyze_failure | repo=%s latency=%.1fs error=%s", repo_url, time.time() - t_start, str(e)[:200])
             await queue.put(_sse_event("error", {"message": f"Analysis failed: {type(e).__name__}: {str(e)}"}))
         finally:
             if repo_path:
