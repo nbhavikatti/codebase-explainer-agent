@@ -1,4 +1,4 @@
-Currently live at https://codebase-explainer-agent-production.up.railway.app/
+Currently live at: https://codebase-explainer-agent-production.up.railway.app/
 
 # Codebase Explainer Agent
 
