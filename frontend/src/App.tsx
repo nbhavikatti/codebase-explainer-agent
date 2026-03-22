@@ -39,6 +39,30 @@ function parseApiUrl(raw: string): { url: string; headers: Record<string, string
 
 const { url: API_URL, headers: AUTH_HEADERS } = parseApiUrl(RAW_API_URL);
 
+function renderMarkdownInline(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  // Match **bold**, *italic*, or plain text segments
+  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    if (match[2]) {
+      parts.push(<strong key={key++} className="font-semibold text-white">{match[2]}</strong>);
+    } else if (match[3]) {
+      parts.push(<em key={key++} className="italic">{match[3]}</em>);
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts;
+}
+
 interface StepInfo {
   step: string;
   message: string;
@@ -396,15 +420,18 @@ function App() {
           <div className="animate-fade-in">
             {/* Tech Stack Badges */}
             {analysis.tech_stack && analysis.tech_stack.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-6 justify-center">
-                {analysis.tech_stack.map((tech) => (
-                  <span
-                    key={tech}
-                    className="px-3 py-1 text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20 rounded-full"
-                  >
-                    {tech}
-                  </span>
-                ))}
+              <div className="mb-6">
+                <p className="text-center text-sm text-gray-400 mb-3">Technologies used in this repository</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {analysis.tech_stack.map((tech) => (
+                    <span
+                      key={tech}
+                      className="px-3 py-1 text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20 rounded-full"
+                    >
+                      {tech}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -576,7 +603,14 @@ function App() {
                           }`}
                         >
                           <div className="whitespace-pre-line">
-                            {msg.content}
+                            {msg.role === "assistant"
+                              ? msg.content.split("\n").map((line, li) => (
+                                  <span key={li}>
+                                    {li > 0 && "\n"}
+                                    {renderMarkdownInline(line)}
+                                  </span>
+                                ))
+                              : msg.content}
                           </div>
                         </div>
                       </div>

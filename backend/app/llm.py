@@ -42,7 +42,7 @@ Your job is to produce a comprehensive but concise analysis of the codebase.
 Respond in valid JSON with this exact structure:
 {
   "project_summary": "A 2-3 paragraph summary of what this project is and does",
-  "tech_stack": ["list", "of", "technologies", "and", "frameworks"],
+  "tech_stack": ["Technology (frontend)", "Technology (backend)", "Technology (full-stack)", "Technology (tooling)"],
   "architecture_overview": "A description of the project architecture and how components fit together",
   "top_important_files": [
     {"path": "file/path.ext", "description": "Why this file is important"}
@@ -53,6 +53,7 @@ Respond in valid JSON with this exact structure:
   "how_it_works": "A detailed explanation of how the codebase works, covering the main flows and key components",
   "key_concepts": ["Important concept 1", "Important concept 2"]
 }
+For tech_stack, label each technology with its role in parentheses: (frontend), (backend), (full-stack), (database), (tooling), or (devops) as appropriate.
 Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
 
 CHAT_SYSTEM_PROMPT = """You are an expert software engineer helping a user understand a codebase.
