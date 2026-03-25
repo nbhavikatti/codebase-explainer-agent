@@ -140,6 +140,7 @@ function App() {
             eventType = line.slice(7).trim();
           } else if (line.startsWith("data: ")) {
             const data = JSON.parse(line.slice(6));
+            console.log("[SSE]", eventType, data);
             if (eventType === "step") {
               setSteps((prev) => {
                 const existing = prev.findIndex(
@@ -154,6 +155,7 @@ function App() {
                 return [...prev, data];
               });
             } else if (eventType === "result") {
+              console.log("[RESULT] setting analysis:", JSON.stringify(data.analysis).slice(0, 200));
               setAnalysis(data.analysis);
             } else if (eventType === "error") {
               setError(data.message);
@@ -232,6 +234,7 @@ function App() {
   ];
 
   const showWorkspace = !!analysis;
+  console.log("[RENDER] showWorkspace:", showWorkspace, "analysis:", !!analysis, "isAnalyzing:", isAnalyzing);
 
   // Reset to landing page
   const handleNewAnalysis = () => {
