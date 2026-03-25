@@ -231,7 +231,7 @@ function App() {
     { id: "chat", label: "Ask Questions", icon: <MessageSquare className="w-4 h-4" /> },
   ];
 
-  const showWorkspace = !!analysis && !isAnalyzing;
+  const showWorkspace = !!analysis;
 
   // Reset to landing page
   const handleNewAnalysis = () => {
