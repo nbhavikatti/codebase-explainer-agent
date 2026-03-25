@@ -18,6 +18,7 @@ import {
   ListOrdered,
   Lightbulb,
   MessageSquare,
+  ArrowLeft,
 } from "lucide-react";
 
 const RAW_API_URL = import.meta.env.VITE_API_URL || "";
@@ -230,6 +231,278 @@ function App() {
     { id: "chat", label: "Ask Questions", icon: <MessageSquare className="w-4 h-4" /> },
   ];
 
+  const showWorkspace = !!analysis && !isAnalyzing;
+
+  // Reset to landing page
+  const handleNewAnalysis = () => {
+    setAnalysis(null);
+    setSteps([]);
+    setError(null);
+    setChatMessages([]);
+    setActiveTab("summary");
+    setRepoUrl("");
+  };
+
+  // ─── Workspace view (after analysis completes) ───
+  if (showWorkspace) {
+    return (
+      <div className="min-h-screen flex flex-col animate-workspace-in">
+        {/* Workspace Header with Tabs */}
+        <header className="border-b border-white/10 bg-black/30 backdrop-blur-md sticky top-0 z-50">
+          <div className="px-4 py-3 flex items-center gap-3">
+            <button
+              onClick={handleNewAnalysis}
+              className="p-2 rounded-lg hover:bg-white/5 transition-colors text-white/40 hover:text-white/70"
+              title="Analyze another repo"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-white/10">
+              <Code2 className="w-4 h-4 text-blue-400" />
+            </div>
+            <div className="flex flex-col mr-4">
+              <span className="text-sm font-semibold text-white/80 leading-tight">
+                {analyzedUrlRef.current.replace(/^https?:\/\/(www\.)?github\.com\//, "")}
+              </span>
+            </div>
+
+            {/* Tech Stack Badges (compact) */}
+            {analysis.tech_stack && analysis.tech_stack.length > 0 && (
+              <div className="hidden md:flex items-center gap-1.5 mr-auto">
+                {analysis.tech_stack.slice(0, 6).map((tech) => (
+                  <span
+                    key={tech}
+                    className="px-2 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20 rounded-full"
+                  >
+                    {tech}
+                  </span>
+                ))}
+                {analysis.tech_stack.length > 6 && (
+                  <span className="text-[10px] text-white/30">
+                    +{analysis.tech_stack.length - 6}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="px-4 flex gap-0.5 overflow-x-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all whitespace-nowrap border-b-2 ${
+                  activeTab === tab.id
+                    ? "border-blue-400 text-white"
+                    : "border-transparent text-white/40 hover:text-white/60 hover:border-white/10"
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        {/* Tab Content — full screen */}
+        <main className="flex-1 overflow-y-auto">
+          <div className={activeTab === "architecture" ? "px-6 py-8" : "max-w-4xl mx-auto px-6 py-8"}>
+            {activeTab === "summary" && (
+              <div className="animate-fade-in">
+                <h3 className="text-xl font-semibold mb-4 gradient-text">
+                  Project Summary
+                </h3>
+                <div className="text-white/70 leading-relaxed whitespace-pre-line">
+                  {analysis.project_summary}
+                </div>
+                {analysis.key_concepts &&
+                  analysis.key_concepts.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-white/10">
+                      <h4 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
+                        Key Concepts
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {analysis.key_concepts.map((concept, i) => (
+                          <span
+                            key={i}
+                            className="px-3 py-1.5 text-sm bg-violet-500/10 text-violet-300 border border-violet-500/20 rounded-lg"
+                          >
+                            {concept}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+              </div>
+            )}
+
+            {activeTab === "architecture" && (
+              <div className="animate-fade-in">
+                <h3 className="text-xl font-semibold mb-4 gradient-text">
+                  Architecture Overview
+                </h3>
+                <div className="text-white/70 leading-relaxed whitespace-pre-line">
+                  {analysis.architecture_overview}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "files" && (
+              <div className="animate-fade-in">
+                <h3 className="text-xl font-semibold mb-4 gradient-text">
+                  Top Important Files
+                </h3>
+                <div className="space-y-3">
+                  {analysis.top_important_files?.map((file, i) => (
+                    <div
+                      key={i}
+                      className="p-4 bg-white/5 rounded-lg border border-white/5 hover:border-white/10 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <FileText className="w-4 h-4 text-blue-400" />
+                        <span className="font-mono text-sm text-blue-300">
+                          {file.path}
+                        </span>
+                      </div>
+                      <p className="text-sm text-white/50 ml-6">
+                        {file.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "reading" && (
+              <div className="animate-fade-in">
+                <h3 className="text-xl font-semibold mb-4 gradient-text">
+                  Suggested Reading Order
+                </h3>
+                <div className="space-y-4">
+                  {analysis.reading_order?.map((item, i) => (
+                    <div key={i} className="flex gap-4">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-white/10 flex items-center justify-center shrink-0 text-sm font-semibold text-blue-300">
+                        {item.step}
+                      </div>
+                      <div className="pt-1">
+                        <div className="font-mono text-sm text-blue-300 mb-1">
+                          {item.path}
+                        </div>
+                        <p className="text-sm text-white/50">{item.reason}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "how" && (
+              <div className="animate-fade-in">
+                <h3 className="text-xl font-semibold mb-4 gradient-text">
+                  How It Works
+                </h3>
+                <div className="text-white/70 leading-relaxed whitespace-pre-line">
+                  {analysis.how_it_works}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "chat" && (
+              <div className="animate-fade-in flex flex-col h-[calc(100vh-10rem)]">
+                <h3 className="text-xl font-semibold mb-4 gradient-text">
+                  Ask Questions About This Codebase
+                </h3>
+
+                {/* Chat Messages */}
+                <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
+                  {chatMessages.length === 0 && (
+                    <div className="text-center py-12 text-white/30">
+                      <MessageSquare className="w-8 h-8 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">
+                        Ask anything about the codebase...
+                      </p>
+                      <div className="flex flex-wrap gap-2 justify-center mt-4">
+                        {[
+                          "What design patterns are used?",
+                          "How does authentication work?",
+                          "What are the main API endpoints?",
+                        ].map((q) => (
+                          <button
+                            key={q}
+                            onClick={() => {
+                              setChatInput(q);
+                            }}
+                            className="px-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-white/50"
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {chatMessages.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex ${
+                        msg.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm ${
+                          msg.role === "user"
+                            ? "bg-blue-500/20 text-blue-100 rounded-br-md"
+                            : "bg-white/5 text-white/70 rounded-bl-md border border-white/10"
+                        }`}
+                      >
+                        {msg.role === "assistant" ? (
+                          <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-blue-300 prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10">
+                            <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          </div>
+                        ) : (
+                          <div className="whitespace-pre-line">{msg.content}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {isChatting && (
+                    <div className="flex justify-start">
+                      <div className="bg-white/5 border border-white/10 rounded-2xl rounded-bl-md px-4 py-3">
+                        <Loader2 className="w-4 h-4 animate-spin text-white/50" />
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Chat Input */}
+                <div className="flex gap-2 pt-4 border-t border-white/10">
+                  <input
+                    type="text"
+                    placeholder="Ask a question about this codebase..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && sendChat()}
+                    disabled={isChatting}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500/50 transition-colors placeholder:text-white/30 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={sendChat}
+                    disabled={isChatting || !chatInput.trim()}
+                    className="p-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ─── Landing / Loading view ───
   return (
     <div className="min-h-screen">
       {/* Header */}
@@ -247,7 +520,7 @@ function App() {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         {/* Hero / Input */}
-        {!analysis && !isAnalyzing && (
+        {!isAnalyzing && (
           <div className="text-center mb-12 animate-fade-in">
             <h2 className="text-4xl font-bold mb-4">
               Understand any{" "}
@@ -386,238 +659,6 @@ function App() {
                       ))}
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Analysis Results */}
-        {analysis && (
-          <div className="animate-fade-in">
-            {/* Tech Stack Badges */}
-            {analysis.tech_stack && analysis.tech_stack.length > 0 && (
-              <div className="mb-6">
-                <p className="text-center text-sm font-semibold text-white/60 uppercase tracking-widest mb-3">Tech Stack</p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {analysis.tech_stack.map((tech) => (
-                    <span
-                      key={tech}
-                      className="px-3 py-1 text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20 rounded-full"
-                    >
-                      {tech}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Tabs */}
-            <div className="flex gap-1 mb-6 overflow-x-auto pb-2 justify-center flex-wrap">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? "bg-white/10 text-white border border-white/20"
-                      : "text-white/40 hover:text-white/60 hover:bg-white/5"
-                  }`}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab Content */}
-            <div className="glass-card p-6 min-h-[300px]">
-              {activeTab === "summary" && (
-                <div className="animate-fade-in">
-                  <h3 className="text-xl font-semibold mb-4 gradient-text">
-                    Project Summary
-                  </h3>
-                  <div className="text-white/70 leading-relaxed whitespace-pre-line">
-                    {analysis.project_summary}
-                  </div>
-                  {analysis.key_concepts &&
-                    analysis.key_concepts.length > 0 && (
-                      <div className="mt-6 pt-6 border-t border-white/10">
-                        <h4 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
-                          Key Concepts
-                        </h4>
-                        <div className="flex flex-wrap gap-2">
-                          {analysis.key_concepts.map((concept, i) => (
-                            <span
-                              key={i}
-                              className="px-3 py-1.5 text-sm bg-violet-500/10 text-violet-300 border border-violet-500/20 rounded-lg"
-                            >
-                              {concept}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                </div>
-              )}
-
-              {activeTab === "architecture" && (
-                <div className="animate-fade-in">
-                  <h3 className="text-xl font-semibold mb-4 gradient-text">
-                    Architecture Overview
-                  </h3>
-                  <div className="text-white/70 leading-relaxed whitespace-pre-line">
-                    {analysis.architecture_overview}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "files" && (
-                <div className="animate-fade-in">
-                  <h3 className="text-xl font-semibold mb-4 gradient-text">
-                    Top Important Files
-                  </h3>
-                  <div className="space-y-3">
-                    {analysis.top_important_files?.map((file, i) => (
-                      <div
-                        key={i}
-                        className="p-4 bg-white/5 rounded-lg border border-white/5 hover:border-white/10 transition-colors"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <FileText className="w-4 h-4 text-blue-400" />
-                          <span className="font-mono text-sm text-blue-300">
-                            {file.path}
-                          </span>
-                        </div>
-                        <p className="text-sm text-white/50 ml-6">
-                          {file.description}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "reading" && (
-                <div className="animate-fade-in">
-                  <h3 className="text-xl font-semibold mb-4 gradient-text">
-                    Suggested Reading Order
-                  </h3>
-                  <div className="space-y-4">
-                    {analysis.reading_order?.map((item, i) => (
-                      <div key={i} className="flex gap-4">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-white/10 flex items-center justify-center shrink-0 text-sm font-semibold text-blue-300">
-                          {item.step}
-                        </div>
-                        <div className="pt-1">
-                          <div className="font-mono text-sm text-blue-300 mb-1">
-                            {item.path}
-                          </div>
-                          <p className="text-sm text-white/50">{item.reason}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "how" && (
-                <div className="animate-fade-in">
-                  <h3 className="text-xl font-semibold mb-4 gradient-text">
-                    How It Works
-                  </h3>
-                  <div className="text-white/70 leading-relaxed whitespace-pre-line">
-                    {analysis.how_it_works}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "chat" && (
-                <div className="animate-fade-in flex flex-col h-[500px]">
-                  <h3 className="text-xl font-semibold mb-4 gradient-text">
-                    Ask Questions About This Codebase
-                  </h3>
-
-                  {/* Chat Messages */}
-                  <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
-                    {chatMessages.length === 0 && (
-                      <div className="text-center py-12 text-white/30">
-                        <MessageSquare className="w-8 h-8 mx-auto mb-3 opacity-50" />
-                        <p className="text-sm">
-                          Ask anything about the codebase...
-                        </p>
-                        <div className="flex flex-wrap gap-2 justify-center mt-4">
-                          {[
-                            "What design patterns are used?",
-                            "How does authentication work?",
-                            "What are the main API endpoints?",
-                          ].map((q) => (
-                            <button
-                              key={q}
-                              onClick={() => {
-                                setChatInput(q);
-                              }}
-                              className="px-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-white/50"
-                            >
-                              {q}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {chatMessages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className={`flex ${
-                          msg.role === "user" ? "justify-end" : "justify-start"
-                        }`}
-                      >
-                        <div
-                          className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm ${
-                            msg.role === "user"
-                              ? "bg-blue-500/20 text-blue-100 rounded-br-md"
-                              : "bg-white/5 text-white/70 rounded-bl-md border border-white/10"
-                          }`}
-                        >
-                          {msg.role === "assistant" ? (
-                            <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-blue-300 prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10">
-                              <ReactMarkdown>{msg.content}</ReactMarkdown>
-                            </div>
-                          ) : (
-                            <div className="whitespace-pre-line">{msg.content}</div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {isChatting && (
-                      <div className="flex justify-start">
-                        <div className="bg-white/5 border border-white/10 rounded-2xl rounded-bl-md px-4 py-3">
-                          <Loader2 className="w-4 h-4 animate-spin text-white/50" />
-                        </div>
-                      </div>
-                    )}
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  {/* Chat Input */}
-                  <div className="flex gap-2 pt-4 border-t border-white/10">
-                    <input
-                      type="text"
-                      placeholder="Ask a question about this codebase..."
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && sendChat()}
-                      disabled={isChatting}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500/50 transition-colors placeholder:text-white/30 disabled:opacity-50"
-                    />
-                    <button
-                      onClick={sendChat}
-                      disabled={isChatting || !chatInput.trim()}
-                      className="p-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
