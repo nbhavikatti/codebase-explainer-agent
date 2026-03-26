@@ -161,6 +161,11 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
                 return True
 
             arch = analysis.get("architecture_overview")
+            if not isinstance(arch, dict):
+                # LLM returned a string or unexpected type — create empty graph
+                logger.warning("dep_graph_fallback | repo=%s architecture_overview was %s, not dict", repo_url, type(arch).__name__)
+                arch = {"pattern": "dependency-tree", "nodes": [], "edges": [], "groups": []}
+                analysis["architecture_overview"] = arch
             if isinstance(arch, dict):
                 valid_nodes = [
                     n for n in arch.get("nodes", [])

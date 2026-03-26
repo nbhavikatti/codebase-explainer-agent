@@ -141,31 +141,41 @@ function App() {
         buffer = lines.pop() || "";
 
         let eventType = "";
+        let dataBuffer = "";
         for (const line of lines) {
           if (line.startsWith("event: ")) {
             eventType = line.slice(7).trim();
+            dataBuffer = "";
           } else if (line.startsWith("data: ")) {
-            const data = JSON.parse(line.slice(6));
-            console.log("[SSE]", eventType, data);
-            if (eventType === "step") {
-              setSteps((prev) => {
-                const existing = prev.findIndex(
-                  (s) => s.step === data.step && !s.done
-                );
-                if (existing >= 0 && data.done) {
-                  const updated = [...prev];
-                  updated[existing] = data;
-                  return updated;
-                }
-                if (existing >= 0) return prev;
-                return [...prev, data];
-              });
-            } else if (eventType === "result") {
-              console.log("[RESULT] setting analysis:", JSON.stringify(data.analysis).slice(0, 200));
-              setAnalysis(data.analysis);
-            } else if (eventType === "error") {
-              setError(data.message);
+            dataBuffer += line.slice(6);
+          } else if (line === "" && dataBuffer) {
+            // Empty line = end of SSE event
+            try {
+              const data = JSON.parse(dataBuffer);
+              console.log("[SSE]", eventType, data);
+              if (eventType === "step") {
+                setSteps((prev) => {
+                  const existing = prev.findIndex(
+                    (s) => s.step === data.step && !s.done
+                  );
+                  if (existing >= 0 && data.done) {
+                    const updated = [...prev];
+                    updated[existing] = data;
+                    return updated;
+                  }
+                  if (existing >= 0) return prev;
+                  return [...prev, data];
+                });
+              } else if (eventType === "result") {
+                console.log("[RESULT] setting analysis:", JSON.stringify(data.analysis).slice(0, 200));
+                setAnalysis(data.analysis);
+              } else if (eventType === "error") {
+                setError(data.message);
+              }
+            } catch (parseErr) {
+              console.error("[SSE] Failed to parse data:", parseErr, dataBuffer.slice(0, 200));
             }
+            dataBuffer = "";
           }
         }
       }
