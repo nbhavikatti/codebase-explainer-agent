@@ -48,7 +48,7 @@ Respond in valid JSON with this exact structure:
       {"id": "relative/file/path.ext", "label": "Short display name", "description": "What this file/module does"}
     ],
     "edges": [
-      {"source": "relative/file/path.ext", "target": "other/file.ext", "label": "optional relationship label"}
+      {"source": "relative/file/path.ext", "target": "other/file.ext", "label": "sends events to"}
     ]
   },
   "top_important_files": [
@@ -66,7 +66,7 @@ For architecture_overview, build a file dependency graph:
 - Each edge should represent an import/dependency from source to target.
 - Include 8-20 of the most important files as nodes. Group related utilities if needed.
 - Only include edges for real imports/dependencies you can see in the file contents.
-- The "label" on edges is optional (e.g. "imports", "configures", "extends").
+- Edge labels must describe the specific relationship in max 4 words (e.g. "sends events to", "configures routes for", "validates input from"). Never use generic labels like "imports" or "depends on".
 Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
 
 CHAT_SYSTEM_PROMPT = """You are an expert software engineer helping a user understand a codebase.
