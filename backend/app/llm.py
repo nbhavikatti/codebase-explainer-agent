@@ -75,7 +75,7 @@ First, classify the repo into exactly one pattern:
 Then build the graph:
 - ONLY use file paths that appear in the provided file tree. Never invent or guess file paths.
 - Each node id MUST be an exact path from the file tree.
-- Include 8-20 runtime-critical source files as nodes. EXCLUDE tests, docs, config files, lock files, CI/CD.
+- Include 8-20 runtime-critical source files as nodes. EXCLUDE tests, docs, examples/samples, config files, lock files, CI/CD.
 - Assign each node a "group" matching a group id. Groups represent logical clusters (e.g. "frontend", "api", "core", "auth-service", "plugin-stripe").
 - For "dependency-tree": groups are architectural layers (e.g. "entrypoints", "routes", "models", "utils").
 - For "parallel-lanes": each group is one lane/implementation (e.g. "go-sdk", "typescript-sdk").

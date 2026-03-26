@@ -142,7 +142,7 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             # Validate architecture_overview nodes against actual file tree
             # and filter out non-runtime files
             valid_paths = {f["path"] for f in file_tree}
-            _EXCLUDED_PREFIXES = ("test/", "tests/", "__tests__/", "spec/", "docs/", "doc/", ".github/")
+            _EXCLUDED_PREFIXES = ("test/", "tests/", "__tests__/", "spec/", "docs/", "doc/", ".github/", "examples/", "example/", "samples/", "sample/")
             _EXCLUDED_NAMES = {"README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE", "LICENSE.md"}
             _EXCLUDED_SUFFIXES = (".test.", ".spec.", "_test.", ".md", ".txt", ".lock")
 
