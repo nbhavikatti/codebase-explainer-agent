@@ -140,10 +140,32 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
                 analysis = {"error": "Failed to parse analysis", "raw": analysis_json}
 
             # Validate architecture_overview nodes against actual file tree
+            # and filter out non-runtime files
             valid_paths = {f["path"] for f in file_tree}
+            _EXCLUDED_PREFIXES = ("test/", "tests/", "__tests__/", "spec/", "docs/", "doc/", ".github/")
+            _EXCLUDED_NAMES = {"README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE", "LICENSE.md"}
+            _EXCLUDED_SUFFIXES = (".test.", ".spec.", "_test.", ".md", ".txt", ".lock")
+
+            def _is_runtime_source(path: str) -> bool:
+                if path in _EXCLUDED_NAMES:
+                    return False
+                lower = path.lower()
+                if any(lower.startswith(p) for p in _EXCLUDED_PREFIXES):
+                    return False
+                if any(s in lower for s in _EXCLUDED_SUFFIXES):
+                    return False
+                # Also catch test files by basename
+                basename = path.rsplit("/", 1)[-1].lower()
+                if basename.startswith("test_") or basename.endswith(("_test.go", "_test.py")):
+                    return False
+                return True
+
             arch = analysis.get("architecture_overview")
             if isinstance(arch, dict):
-                valid_nodes = [n for n in arch.get("nodes", []) if n.get("id") in valid_paths]
+                valid_nodes = [
+                    n for n in arch.get("nodes", [])
+                    if n.get("id") in valid_paths and _is_runtime_source(n["id"])
+                ]
                 valid_node_ids = {n["id"] for n in valid_nodes}
                 valid_edges = [
                     e for e in arch.get("edges", [])
@@ -151,7 +173,7 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
                 ]
                 removed = len(arch.get("nodes", [])) - len(valid_nodes)
                 if removed:
-                    logger.info("dep_graph_cleanup | repo=%s removed=%d hallucinated nodes", repo_url, removed)
+                    logger.info("dep_graph_cleanup | repo=%s removed=%d non-runtime/hallucinated nodes", repo_url, removed)
                 analysis["architecture_overview"] = {"nodes": valid_nodes, "edges": valid_edges}
 
             await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Analysis complete!", "done": True}))

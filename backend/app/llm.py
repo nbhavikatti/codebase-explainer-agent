@@ -65,7 +65,8 @@ For architecture_overview, build a file dependency graph:
 - ONLY use file paths that appear in the provided file tree. Never invent or guess file paths.
 - Each node id MUST be an exact path from the file tree.
 - Each edge should represent an import/dependency from source to target that you can verify in the file contents.
-- Include 8-20 of the most important files as nodes. Prioritize files that have the most connections (imports or are imported by others).
+- Include 8-20 runtime-critical source files as nodes. Prioritize files that have the most connections (imports or are imported by others).
+- EXCLUDE: test files, test directories, documentation (README, CHANGELOG, docs/), config files (tsconfig, eslint, prettier), lock files, CI/CD workflows, and anything not part of the runtime source code.
 - Edge labels must describe the specific relationship in max 4 words (e.g. "sends events to", "configures routes for", "validates input from"). Never use generic labels like "imports" or "depends on".
 Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
 
