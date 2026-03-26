@@ -53,8 +53,10 @@ interface AnalysisResult {
   project_summary: string;
   tech_stack: string[];
   architecture_overview: {
-    nodes: { id: string; label: string; description: string }[];
-    edges: { source: string; target: string; label?: string }[];
+    pattern: "dependency-tree" | "parallel-lanes" | "service-map" | "hub-and-spokes";
+    nodes: { id: string; label: string; description: string; group?: string }[];
+    edges: { source: string; target: string }[];
+    groups?: { id: string; label: string }[];
   };
   top_important_files: { path: string; description: string }[];
   reading_order: { step: number; path: string; reason: string }[];

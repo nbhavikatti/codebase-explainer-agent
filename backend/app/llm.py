@@ -44,11 +44,15 @@ Respond in valid JSON with this exact structure:
   "project_summary": "A 2-3 paragraph summary of what this project is and does",
   "tech_stack": ["Technology (frontend)", "Technology (backend)", "Technology (full-stack)", "Technology (tooling)"],
   "architecture_overview": {
+    "pattern": "dependency-tree | parallel-lanes | service-map | hub-and-spokes",
     "nodes": [
-      {"id": "relative/file/path.ext", "label": "Short display name", "description": "What this file/module does"}
+      {"id": "relative/file/path.ext", "label": "Short display name", "description": "What this file/module does", "group": "optional group id"}
     ],
     "edges": [
-      {"source": "relative/file/path.ext", "target": "other/file.ext", "label": "sends events to"}
+      {"source": "relative/file/path.ext", "target": "other/file.ext"}
+    ],
+    "groups": [
+      {"id": "group-id", "label": "Human-readable group name"}
     ]
   },
   "top_important_files": [
@@ -61,13 +65,24 @@ Respond in valid JSON with this exact structure:
   "key_concepts": ["Important concept 1", "Important concept 2"]
 }
 For tech_stack, label each technology with its role in parentheses: (frontend), (backend), (full-stack), (database), (tooling), or (devops) as appropriate.
-For architecture_overview, build a file dependency graph:
+For architecture_overview:
+First, classify the repo into exactly one pattern:
+- "dependency-tree": A single cohesive system (e.g. a web app, a CLI tool, a library). Show the file-level import/dependency tree.
+- "parallel-lanes": Multiple independent implementations of similar things (e.g. same service in Go + TypeScript, multiple language SDKs). Show parallel lanes, one per implementation.
+- "service-map": A monorepo with multiple services or packages (e.g. packages/, services/, apps/ directories). Show a service/package-level map with key files within each.
+- "hub-and-spokes": A plugin/extension ecosystem with a core and plugins (e.g. a framework with middleware, a tool with plugins). Show the core hub with spokes radiating out.
+
+Then build the graph:
 - ONLY use file paths that appear in the provided file tree. Never invent or guess file paths.
 - Each node id MUST be an exact path from the file tree.
-- Each edge should represent an import/dependency from source to target that you can verify in the file contents.
-- Include 8-20 runtime-critical source files as nodes. Prioritize files that have the most connections (imports or are imported by others).
-- EXCLUDE: test files, test directories, documentation (README, CHANGELOG, docs/), config files (tsconfig, eslint, prettier), lock files, CI/CD workflows, and anything not part of the runtime source code.
-- Edge labels must describe the specific relationship in max 4 words (e.g. "sends events to", "configures routes for", "validates input from"). Never use generic labels like "imports" or "depends on".
+- Include 8-20 runtime-critical source files as nodes. EXCLUDE tests, docs, config files, lock files, CI/CD.
+- Assign each node a "group" matching a group id. Groups represent logical clusters (e.g. "frontend", "api", "core", "auth-service", "plugin-stripe").
+- For "dependency-tree": groups are architectural layers (e.g. "entrypoints", "routes", "models", "utils").
+- For "parallel-lanes": each group is one lane/implementation (e.g. "go-sdk", "typescript-sdk").
+- For "service-map": each group is a service or package (e.g. "api-gateway", "user-service", "shared-lib").
+- For "hub-and-spokes": one group for the hub (e.g. "core"), and one group per spoke (e.g. "plugin-auth", "plugin-billing").
+- Edges represent real imports/dependencies visible in the file contents.
+- Every node MUST have a group. Every group in the groups array MUST be referenced by at least one node.
 Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
 
 CHAT_SYSTEM_PROMPT = """You are an expert software engineer helping a user understand a codebase.
