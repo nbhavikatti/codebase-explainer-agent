@@ -127,7 +127,7 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Generating AI analysis (this may take a moment)..."}))
             try:
                 analysis_json = await asyncio.wait_for(
-                    generate_analysis(file_tree_str, project_types, file_contents, repo_url),
+                    generate_analysis(file_tree_str, project_types, file_contents),
                     timeout=180,
                 )
             except asyncio.TimeoutError:
@@ -291,7 +291,6 @@ async def chat(request: ChatRequest, req: Request):
         cached["file_tree_str"],
         cached["project_types"],
         cached["file_contents"],
-        repo_url,
     )
     return {"answer": answer}
 

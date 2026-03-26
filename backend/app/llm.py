@@ -84,7 +84,8 @@ Then build the graph:
 - For "hub-and-spokes": one group for the hub (e.g. "core"), and one group per spoke (e.g. "plugin-auth", "plugin-billing").
 - Edges represent real imports/dependencies visible in the file contents.
 - Every node MUST have a group. Every group in the groups array MUST be referenced by at least one node.
-Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
+Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist.
+CRITICAL: Base your analysis ONLY on the file tree and file contents provided. Do NOT use any prior knowledge you may have about this repository from your training data. If something is not visible in the provided files, it does not exist for the purposes of this analysis."""
 
 CHAT_SYSTEM_PROMPT = """You are an expert software engineer helping a user understand a codebase.
 You have analyzed a GitHub repository and have context about its structure and contents.
@@ -96,15 +97,17 @@ async def generate_analysis(
     file_tree_str: str,
     project_types: list[str],
     file_contents: dict[str, str],
-    repo_url: str,
 ) -> str:
     """Generate a comprehensive analysis of the codebase using the LLM."""
     files_context = ""
     for fpath, content in file_contents.items():
         files_context += f"\n\n=== {fpath} ===\n{content}"
 
-    user_prompt = f"""Analyze this GitHub repository: {repo_url}
+    user_prompt = f"""Analyze this repository.
 Detected project type(s): {', '.join(project_types)}
+
+IMPORTANT: Base your ENTIRE analysis strictly on the file tree and file contents provided below. Do NOT use any prior knowledge about this repository. Only reference files, components, and technologies that are explicitly present in the provided data.
+
 File tree:
 {file_tree_str}
 Key file contents:
@@ -130,7 +133,6 @@ async def chat_about_repo(
     file_tree_str: str,
     project_types: list[str],
     file_contents: dict[str, str],
-    repo_url: str,
 ) -> str:
     """Answer a question about the codebase."""
     files_context = ""
@@ -138,7 +140,6 @@ async def chat_about_repo(
         files_context += f"\n\n=== {fpath} ===\n{content}"
 
     system_msg = f"""{CHAT_SYSTEM_PROMPT}
-Repository: {repo_url}
 Project type(s): {', '.join(project_types)}
 File tree:
 {file_tree_str}
