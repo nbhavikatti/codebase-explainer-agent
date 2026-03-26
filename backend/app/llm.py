@@ -44,9 +44,9 @@ Respond in valid JSON with this exact structure:
   "project_summary": "A 2-3 paragraph summary of what this project is and does",
   "tech_stack": ["Technology (frontend)", "Technology (backend)", "Technology (full-stack)", "Technology (tooling)"],
   "architecture_overview": {
-    "pattern": "dependency-tree | parallel-lanes | service-map | hub-and-spokes",
+    "pattern": "ONE OF: dependency-tree, parallel-lanes, service-map, hub-and-spokes",
     "nodes": [
-      {"id": "relative/file/path.ext", "label": "Short display name", "description": "What this file/module does", "group": "optional group id"}
+      {"id": "relative/file/path.ext", "label": "Short display name", "description": "What this file/module does", "group": "group-id"}
     ],
     "edges": [
       {"source": "relative/file/path.ext", "target": "other/file.ext"}

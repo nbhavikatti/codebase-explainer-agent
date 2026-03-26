@@ -174,7 +174,40 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
                 removed = len(arch.get("nodes", [])) - len(valid_nodes)
                 if removed:
                     logger.info("dep_graph_cleanup | repo=%s removed=%d non-runtime/hallucinated nodes", repo_url, removed)
-                analysis["architecture_overview"] = {"nodes": valid_nodes, "edges": valid_edges}
+
+                # Ensure pattern is valid
+                pattern = arch.get("pattern", "dependency-tree")
+                if pattern not in ("dependency-tree", "parallel-lanes", "service-map", "hub-and-spokes"):
+                    pattern = "dependency-tree"
+
+                # Ensure every node has a group; infer from top-level directory if missing
+                groups = arch.get("groups") or []
+                group_ids = {g["id"] for g in groups}
+                nodes_missing_group = [n for n in valid_nodes if not n.get("group") or n["group"] not in group_ids]
+
+                if nodes_missing_group:
+                    # Infer groups from directory structure
+                    for n in nodes_missing_group:
+                        parts = n["id"].split("/")
+                        n["group"] = parts[0] if len(parts) > 1 else "root"
+
+                    # Rebuild groups from what nodes actually reference
+                    all_group_ids = {n["group"] for n in valid_nodes if n.get("group")}
+                    existing = {g["id"] for g in groups}
+                    for gid in all_group_ids:
+                        if gid not in existing:
+                            groups.append({"id": gid, "label": gid.replace("-", " ").replace("_", " ").title()})
+
+                # Remove groups that have no nodes
+                used_groups = {n.get("group") for n in valid_nodes}
+                groups = [g for g in groups if g["id"] in used_groups]
+
+                analysis["architecture_overview"] = {
+                    "pattern": pattern,
+                    "nodes": valid_nodes,
+                    "edges": valid_edges,
+                    "groups": groups,
+                }
 
             await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Analysis complete!", "done": True}))
 
