@@ -132,6 +132,46 @@ function App() {
       if (!reader) throw new Error("No response stream");
 
       let buffer = "";
+      let eventType = "";
+      let dataBuffer = "";
+
+      const processSSELine = (line: string) => {
+        if (line.startsWith("event: ")) {
+          eventType = line.slice(7).trim();
+          dataBuffer = "";
+        } else if (line.startsWith("data: ")) {
+          dataBuffer += line.slice(6);
+        } else if (line === "" && dataBuffer) {
+          // Empty line = end of SSE event
+          try {
+            const data = JSON.parse(dataBuffer);
+            console.log("[SSE]", eventType, data);
+            if (eventType === "step") {
+              setSteps((prev) => {
+                const existing = prev.findIndex(
+                  (s) => s.step === data.step && !s.done
+                );
+                if (existing >= 0 && data.done) {
+                  const updated = [...prev];
+                  updated[existing] = data;
+                  return updated;
+                }
+                if (existing >= 0) return prev;
+                return [...prev, data];
+              });
+            } else if (eventType === "result") {
+              console.log("[RESULT] setting analysis:", JSON.stringify(data.analysis).slice(0, 200));
+              setAnalysis(data.analysis);
+            } else if (eventType === "error") {
+              setError(data.message);
+            }
+          } catch (parseErr) {
+            console.error("[SSE] Failed to parse data:", parseErr, dataBuffer.slice(0, 200));
+          }
+          dataBuffer = "";
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -140,44 +180,21 @@ function App() {
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
-        let eventType = "";
-        let dataBuffer = "";
         for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-            dataBuffer = "";
-          } else if (line.startsWith("data: ")) {
-            dataBuffer += line.slice(6);
-          } else if (line === "" && dataBuffer) {
-            // Empty line = end of SSE event
-            try {
-              const data = JSON.parse(dataBuffer);
-              console.log("[SSE]", eventType, data);
-              if (eventType === "step") {
-                setSteps((prev) => {
-                  const existing = prev.findIndex(
-                    (s) => s.step === data.step && !s.done
-                  );
-                  if (existing >= 0 && data.done) {
-                    const updated = [...prev];
-                    updated[existing] = data;
-                    return updated;
-                  }
-                  if (existing >= 0) return prev;
-                  return [...prev, data];
-                });
-              } else if (eventType === "result") {
-                console.log("[RESULT] setting analysis:", JSON.stringify(data.analysis).slice(0, 200));
-                setAnalysis(data.analysis);
-              } else if (eventType === "error") {
-                setError(data.message);
-              }
-            } catch (parseErr) {
-              console.error("[SSE] Failed to parse data:", parseErr, dataBuffer.slice(0, 200));
-            }
-            dataBuffer = "";
-          }
+          processSSELine(line);
         }
+      }
+
+      // Process any remaining data left in the buffer after stream ends
+      if (buffer) {
+        const remainingLines = buffer.split("\n");
+        for (const line of remainingLines) {
+          processSSELine(line);
+        }
+      }
+      // Flush any final event that wasn't followed by an empty line
+      if (dataBuffer) {
+        processSSELine("");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "An error occurred");
