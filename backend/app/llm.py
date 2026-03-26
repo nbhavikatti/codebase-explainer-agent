@@ -76,6 +76,7 @@ Then build the graph:
 - ONLY use file paths that appear in the provided file tree. Never invent or guess file paths.
 - Each node id MUST be an exact path from the file tree.
 - Include 8-20 runtime-critical source files as nodes. EXCLUDE tests, docs, examples/samples, config files, lock files, CI/CD.
+- Do NOT include multiple nodes for the same logical component. For example, if a module has both __init__.py and a core implementation file, pick only the one with the most meaningful code. Each node should represent a distinct responsibility.
 - Assign each node a "group" matching a group id. Groups represent logical clusters (e.g. "frontend", "api", "core", "auth-service", "plugin-stripe").
 - For "dependency-tree": groups are architectural layers (e.g. "entrypoints", "routes", "models", "utils").
 - For "parallel-lanes": each group is one lane/implementation (e.g. "go-sdk", "typescript-sdk").
