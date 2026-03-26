@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MarkerType,
   type Node,
   type Edge,
   Position,
@@ -64,25 +65,14 @@ function layoutGraph(graphData: GraphData) {
     };
   });
 
-  const edges: Edge[] = validEdges.map((e, i) => {
-    const label = e.label?.trim() || undefined;
-    return {
-      id: `e-${i}`,
-      source: e.source,
-      target: e.target,
-      animated: false,
-      style: { stroke: "rgba(139, 92, 246, 0.4)", strokeWidth: 1.5 },
-      ...(label
-        ? {
-            label,
-            labelStyle: { fill: "rgba(255,255,255,0.4)", fontSize: 10 },
-            labelBgStyle: { fill: "#1a1a2e", fillOpacity: 0.9 },
-            labelBgPadding: [4, 2] as [number, number],
-            labelBgBorderRadius: 4,
-          }
-        : {}),
-    };
-  });
+  const edges: Edge[] = validEdges.map((e, i) => ({
+    id: `e-${i}`,
+    source: e.source,
+    target: e.target,
+    animated: false,
+    style: { stroke: "rgba(139, 92, 246, 0.4)", strokeWidth: 1.5 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "rgba(139, 92, 246, 0.6)", width: 16, height: 16 },
+  }));
 
   return { nodes, edges };
 }
