@@ -62,10 +62,10 @@ Respond in valid JSON with this exact structure:
 }
 For tech_stack, label each technology with its role in parentheses: (frontend), (backend), (full-stack), (database), (tooling), or (devops) as appropriate.
 For architecture_overview, build a file dependency graph:
-- Each node should represent a key file or module (use the actual relative path as the id).
-- Each edge should represent an import/dependency from source to target.
-- Include 8-20 of the most important files as nodes. Group related utilities if needed.
-- Only include edges for real imports/dependencies you can see in the file contents.
+- ONLY use file paths that appear in the provided file tree. Never invent or guess file paths.
+- Each node id MUST be an exact path from the file tree.
+- Each edge should represent an import/dependency from source to target that you can verify in the file contents.
+- Include 8-20 of the most important files as nodes. Prioritize files that have the most connections (imports or are imported by others).
 - Edge labels must describe the specific relationship in max 4 words (e.g. "sends events to", "configures routes for", "validates input from"). Never use generic labels like "imports" or "depends on".
 Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
 

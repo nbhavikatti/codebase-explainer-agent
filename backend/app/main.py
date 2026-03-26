@@ -139,6 +139,21 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             except json.JSONDecodeError:
                 analysis = {"error": "Failed to parse analysis", "raw": analysis_json}
 
+            # Validate architecture_overview nodes against actual file tree
+            valid_paths = {f["path"] for f in file_tree}
+            arch = analysis.get("architecture_overview")
+            if isinstance(arch, dict):
+                valid_nodes = [n for n in arch.get("nodes", []) if n.get("id") in valid_paths]
+                valid_node_ids = {n["id"] for n in valid_nodes}
+                valid_edges = [
+                    e for e in arch.get("edges", [])
+                    if e.get("source") in valid_node_ids and e.get("target") in valid_node_ids
+                ]
+                removed = len(arch.get("nodes", [])) - len(valid_nodes)
+                if removed:
+                    logger.info("dep_graph_cleanup | repo=%s removed=%d hallucinated nodes", repo_url, removed)
+                analysis["architecture_overview"] = {"nodes": valid_nodes, "edges": valid_edges}
+
             await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Analysis complete!", "done": True}))
 
             _repo_cache[repo_url] = {
