@@ -66,7 +66,19 @@ def _check_rate_limit(ip: str, endpoint: str) -> None:
 
 
 def _sse_event(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    payload = json.dumps(data)
+    # SSE spec: multiple "data:" lines are joined with newlines by the client.
+    # Break very large payloads into ≤16 KB chunks so proxies don't truncate a
+    # single enormous line.
+    CHUNK = 16_000
+    if len(payload) <= CHUNK:
+        return f"event: {event}\ndata: {payload}\n\n"
+    lines = [f"event: {event}"]
+    for i in range(0, len(payload), CHUNK):
+        lines.append(f"data: {payload[i:i+CHUNK]}")
+    lines.append("")
+    lines.append("")
+    return "\n".join(lines)
 
 
 async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
@@ -224,6 +236,10 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
             }
 
             await queue.put(_sse_event("result", {"analysis": analysis}))
+            # Send a small "done" event so the large result is never the final
+            # chunk in the stream — avoids proxy/browser buffering edge-cases
+            # where the very last chunk is silently dropped.
+            await queue.put(_sse_event("done", {}))
             logger.info("analyze_success | repo=%s latency=%.1fs", repo_url, time.time() - t_start)
 
         except Exception as e:

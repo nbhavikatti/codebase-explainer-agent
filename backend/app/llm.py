@@ -121,7 +121,7 @@ Provide a comprehensive analysis in the JSON format specified."""
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.3,
-        max_tokens=4000,
+        max_tokens=8000,
         response_format={"type": "json_object"},
     )
     return response.choices[0].message.content or "{}"

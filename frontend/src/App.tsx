@@ -134,42 +134,58 @@ function App() {
       let buffer = "";
       let eventType = "";
       let dataBuffer = "";
+      let resultReceived = false;
+
+      const dispatchSSEEvent = () => {
+        if (!dataBuffer) return;
+        try {
+          const data = JSON.parse(dataBuffer);
+          console.log("[SSE]", eventType, typeof data === "object" ? Object.keys(data) : data);
+          if (eventType === "step") {
+            setSteps((prev) => {
+              const existing = prev.findIndex(
+                (s) => s.step === data.step && !s.done
+              );
+              if (existing >= 0 && data.done) {
+                const updated = [...prev];
+                updated[existing] = data;
+                return updated;
+              }
+              if (existing >= 0) return prev;
+              return [...prev, data];
+            });
+          } else if (eventType === "result") {
+            if (data.analysis && typeof data.analysis === "object" && data.analysis.project_summary) {
+              console.log("[RESULT] setting analysis:", JSON.stringify(data.analysis).slice(0, 200));
+              setAnalysis(data.analysis);
+              resultReceived = true;
+            } else {
+              console.error("[RESULT] malformed analysis — missing expected fields:", Object.keys(data.analysis || {}));
+              setError("Analysis completed but returned incomplete data. Please try again.");
+            }
+          } else if (eventType === "error") {
+            setError(data.message);
+          }
+        } catch (parseErr) {
+          console.error("[SSE] Failed to parse data:", parseErr, dataBuffer.slice(0, 300));
+        }
+        dataBuffer = "";
+      };
 
       const processSSELine = (line: string) => {
         if (line.startsWith("event: ")) {
+          // New event starting — flush any pending data from the previous event
+          dispatchSSEEvent();
           eventType = line.slice(7).trim();
           dataBuffer = "";
         } else if (line.startsWith("data: ")) {
+          // SSE spec: multiple "data:" lines are concatenated
           dataBuffer += line.slice(6);
-        } else if (line === "" && dataBuffer) {
+        } else if (line === "") {
           // Empty line = end of SSE event
-          try {
-            const data = JSON.parse(dataBuffer);
-            console.log("[SSE]", eventType, data);
-            if (eventType === "step") {
-              setSteps((prev) => {
-                const existing = prev.findIndex(
-                  (s) => s.step === data.step && !s.done
-                );
-                if (existing >= 0 && data.done) {
-                  const updated = [...prev];
-                  updated[existing] = data;
-                  return updated;
-                }
-                if (existing >= 0) return prev;
-                return [...prev, data];
-              });
-            } else if (eventType === "result") {
-              console.log("[RESULT] setting analysis:", JSON.stringify(data.analysis).slice(0, 200));
-              setAnalysis(data.analysis);
-            } else if (eventType === "error") {
-              setError(data.message);
-            }
-          } catch (parseErr) {
-            console.error("[SSE] Failed to parse data:", parseErr, dataBuffer.slice(0, 200));
-          }
-          dataBuffer = "";
+          dispatchSSEEvent();
         }
+        // Lines starting with ":" are SSE comments (e.g. pings) — ignore
       };
 
       while (true) {
@@ -187,14 +203,16 @@ function App() {
 
       // Process any remaining data left in the buffer after stream ends
       if (buffer) {
-        const remainingLines = buffer.split("\n");
-        for (const line of remainingLines) {
+        for (const line of buffer.split("\n")) {
           processSSELine(line);
         }
       }
-      // Flush any final event that wasn't followed by an empty line
-      if (dataBuffer) {
-        processSSELine("");
+      // Flush any final event that wasn't terminated by an empty line
+      dispatchSSEEvent();
+
+      // Safety net: if stream ended without a result, show an error
+      if (!resultReceived) {
+        setError("Analysis stream ended without returning results. Please try again.");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "An error occurred");
