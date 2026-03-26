@@ -20,6 +20,7 @@ import {
   MessageSquare,
   ArrowLeft,
 } from "lucide-react";
+import DependencyGraph from "./DependencyGraph";
 
 const RAW_API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -51,7 +52,10 @@ interface StepInfo {
 interface AnalysisResult {
   project_summary: string;
   tech_stack: string[];
-  architecture_overview: string;
+  architecture_overview: {
+    nodes: { id: string; label: string; description: string }[];
+    edges: { source: string; target: string; label?: string }[];
+  };
   top_important_files: { path: string; description: string }[];
   reading_order: { step: number; path: string; reason: string }[];
   how_it_works: string;
@@ -343,11 +347,9 @@ function App() {
             {activeTab === "architecture" && (
               <div className="animate-fade-in">
                 <h3 className="text-xl font-semibold mb-4 gradient-text">
-                  Architecture Overview
+                  Dependency Graph
                 </h3>
-                <div className="text-white/70 leading-relaxed whitespace-pre-line">
-                  {analysis.architecture_overview}
-                </div>
+                <DependencyGraph data={analysis.architecture_overview} />
               </div>
             )}
 

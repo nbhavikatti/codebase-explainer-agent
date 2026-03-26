@@ -43,7 +43,14 @@ Respond in valid JSON with this exact structure:
 {
   "project_summary": "A 2-3 paragraph summary of what this project is and does",
   "tech_stack": ["Technology (frontend)", "Technology (backend)", "Technology (full-stack)", "Technology (tooling)"],
-  "architecture_overview": "A description of the project architecture and how components fit together",
+  "architecture_overview": {
+    "nodes": [
+      {"id": "relative/file/path.ext", "label": "Short display name", "description": "What this file/module does"}
+    ],
+    "edges": [
+      {"source": "relative/file/path.ext", "target": "other/file.ext", "label": "optional relationship label"}
+    ]
+  },
   "top_important_files": [
     {"path": "file/path.ext", "description": "Why this file is important"}
   ],
@@ -54,6 +61,12 @@ Respond in valid JSON with this exact structure:
   "key_concepts": ["Important concept 1", "Important concept 2"]
 }
 For tech_stack, label each technology with its role in parentheses: (frontend), (backend), (full-stack), (database), (tooling), or (devops) as appropriate.
+For architecture_overview, build a file dependency graph:
+- Each node should represent a key file or module (use the actual relative path as the id).
+- Each edge should represent an import/dependency from source to target.
+- Include 8-20 of the most important files as nodes. Group related utilities if needed.
+- Only include edges for real imports/dependencies you can see in the file contents.
+- The "label" on edges is optional (e.g. "imports", "configures", "extends").
 Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
 
 CHAT_SYSTEM_PROMPT = """You are an expert software engineer helping a user understand a codebase.
