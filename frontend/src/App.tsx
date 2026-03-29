@@ -16,7 +16,6 @@ import {
   BookOpen,
   Layers,
   ListOrdered,
-  Lightbulb,
   MessageSquare,
 } from "lucide-react";
 
@@ -67,6 +66,7 @@ const STEP_ICONS: Record<string, React.ReactNode> = {
   file_tree: <FolderTree className="w-4 h-4" />,
   detect_type: <Search className="w-4 h-4" />,
   select_files: <FileText className="w-4 h-4" />,
+  dependency_graph: <FolderTree className="w-4 h-4" />,
   read_files: <Code2 className="w-4 h-4" />,
   llm_analysis: <Brain className="w-4 h-4" />,
 };
@@ -76,6 +76,7 @@ const STEP_ORDER = [
   "file_tree",
   "detect_type",
   "select_files",
+  "dependency_graph",
   "read_files",
   "llm_analysis",
 ];
@@ -226,7 +227,6 @@ function App() {
     { id: "architecture", label: "Architecture", icon: <Layers className="w-4 h-4" /> },
     { id: "files", label: "Key Files", icon: <FileText className="w-4 h-4" /> },
     { id: "reading", label: "Reading Order", icon: <ListOrdered className="w-4 h-4" /> },
-    { id: "how", label: "How It Works", icon: <Lightbulb className="w-4 h-4" /> },
     { id: "chat", label: "Ask Questions", icon: <MessageSquare className="w-4 h-4" /> },
   ];
 
@@ -261,35 +261,37 @@ function App() {
         )}
 
         {/* Input Bar */}
-        <div className="glass-card p-2 mb-8 flex items-center gap-2 max-w-3xl mx-auto">
-          <div className="pl-3 text-white/30">
-            <GitBranch className="w-5 h-5" />
+        {!analysis && (
+          <div className="glass-card p-2 mb-8 flex items-center gap-2 max-w-3xl mx-auto">
+            <div className="pl-3 text-white/30">
+              <GitBranch className="w-5 h-5" />
+            </div>
+            <input
+              type="text"
+              placeholder="https://github.com/owner/repo"
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && startAnalysis()}
+              disabled={isAnalyzing}
+              className="flex-1 bg-transparent border-none outline-none text-white placeholder:text-white/30 py-2 px-2 font-mono text-sm"
+            />
+            <button
+              onClick={startAnalysis}
+              disabled={isAnalyzing || !repoUrl.trim()}
+              className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-violet-500 text-white rounded-lg font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Analyzing...
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4" /> Analyze
+                </>
+              )}
+            </button>
           </div>
-          <input
-            type="text"
-            placeholder="https://github.com/owner/repo"
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && startAnalysis()}
-            disabled={isAnalyzing}
-            className="flex-1 bg-transparent border-none outline-none text-white placeholder:text-white/30 py-2 px-2 font-mono text-sm"
-          />
-          <button
-            onClick={startAnalysis}
-            disabled={isAnalyzing || !repoUrl.trim()}
-            className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-violet-500 text-white rounded-lg font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Analyzing...
-              </>
-            ) : (
-              <>
-                <Brain className="w-4 h-4" /> Analyze
-              </>
-            )}
-          </button>
-        </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -300,7 +302,7 @@ function App() {
         )}
 
         {/* Analysis Steps */}
-        {steps.length > 0 && (
+        {!analysis && steps.length > 0 && (
           <div className="max-w-3xl mx-auto mb-8">
             <div className="glass-card p-6">
               <h3 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-4">
@@ -521,18 +523,7 @@ function App() {
                 </div>
               )}
 
-              {activeTab === "how" && (
-                <div className="animate-fade-in">
-                  <h3 className="text-xl font-semibold mb-4 gradient-text">
-                    How It Works
-                  </h3>
-                  <div className="text-white/70 leading-relaxed whitespace-pre-line">
-                    {analysis.how_it_works}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "chat" && (
+                {activeTab === "chat" && (
                 <div className="animate-fade-in flex flex-col h-[500px]">
                   <h3 className="text-xl font-semibold mb-4 gradient-text">
                     Ask Questions About This Codebase
