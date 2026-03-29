@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import io
+import json
+import logging
 import os
 import shutil
 import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
+logger = logging.getLogger("codebase-explainer")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 # Files/dirs to always skip
 SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".next", "dist", "build",
@@ -87,6 +95,15 @@ def _download_zip(url: str) -> bytes:
         return response.read()
 
 
+def _get_default_branch(owner: str, repo: str) -> str | None:
+    api_url = f"https://api.github.com/repos/{owner}/{repo}"
+    req = urllib.request.Request(api_url, headers={"User-Agent": "codebase-explainer/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as response:
+        data = json.load(response)
+    default_branch = data.get("default_branch")
+    return default_branch if isinstance(default_branch, str) and default_branch else None
+
+
 def clone_repo(repo_url: str) -> str:
     """Download a GitHub repo as a zip and extract to a temp directory. Returns the path."""
     tmp_dir = tempfile.mkdtemp(prefix="codebase_explainer_")
@@ -94,7 +111,18 @@ def clone_repo(repo_url: str) -> str:
     parts = url.rstrip("/").split("/")
     owner, repo = parts[-2], parts[-1]
     zip_data = None
-    for branch in ("main", "master"):
+    branches_to_try: list[str] = []
+    try:
+        default_branch = _get_default_branch(owner, repo)
+        if default_branch:
+            logger.info("Detected default branch for %s/%s: %s", owner, repo, default_branch)
+            branches_to_try.append(default_branch)
+    except Exception as exc:
+        logger.warning("Default branch lookup failed for %s/%s: %s", owner, repo, exc)
+    for fallback_branch in ("main", "master"):
+        if fallback_branch not in branches_to_try:
+            branches_to_try.append(fallback_branch)
+    for branch in branches_to_try:
         zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
         try:
             zip_data = _download_zip(zip_url)
