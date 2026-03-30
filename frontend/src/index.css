@@ -47,8 +47,8 @@
   }
   .concept-graph-canvas {
     position: relative;
-    width: 1000px;
-    min-height: 620px;
+    min-width: 100%;
+    overflow: hidden;
     background-image:
       linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
       linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
@@ -65,11 +65,12 @@
   }
   .concept-node {
     position: absolute;
-    width: 220px;
+    width: 260px;
+    min-height: 168px;
     transform: translate(-50%, -50%);
     border-width: 1px;
     border-radius: 1.25rem;
-    padding: 1rem;
+    padding: 1.125rem 1.125rem 1rem;
     box-shadow: 0 24px 80px rgba(15, 23, 42, 0.45);
     backdrop-filter: blur(18px);
   }

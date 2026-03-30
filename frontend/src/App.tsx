@@ -73,6 +73,16 @@ interface GraphEdge {
   label: string;
 }
 
+interface GraphPoint {
+  x: number;
+  y: number;
+}
+
+interface GraphLayoutNode extends GraphNode {
+  x: number;
+  y: number;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -106,19 +116,141 @@ const GRAPH_NODE_COLORS: Record<string, string> = {
   shared: "from-slate-200/20 via-slate-300/10 to-transparent text-slate-100 border-white/20",
 };
 
-const GRAPH_POSITIONS = [
-  { x: 180, y: 140 },
-  { x: 500, y: 96 },
-  { x: 820, y: 140 },
-  { x: 300, y: 312 },
-  { x: 700, y: 312 },
-  { x: 180, y: 484 },
-  { x: 500, y: 528 },
-  { x: 820, y: 484 },
-];
+const GRAPH_NODE_WIDTH = 260;
+const GRAPH_NODE_HEIGHT = 168;
+const GRAPH_X_GAP = 170;
+const GRAPH_Y_GAP = 104;
+const GRAPH_PADDING_X = 88;
+const GRAPH_PADDING_Y = 72;
 
 function getGraphNodeClass(kind: string) {
   return GRAPH_NODE_COLORS[kind] || GRAPH_NODE_COLORS.workflow;
+}
+
+function truncateEdgeLabel(label: string) {
+  return label.length > 24 ? `${label.slice(0, 21)}...` : label;
+}
+
+function computeGraphLayout(graph: NonNullable<AnalysisResult["conceptual_dependency_graph"]>) {
+  const nodes = graph.nodes;
+  const edges = graph.edges.filter(
+    (edge) =>
+      nodes.some((node) => node.id === edge.source) &&
+      nodes.some((node) => node.id === edge.target)
+  );
+
+  const indegree = new Map(nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(nodes.map((node) => [node.id, [] as string[]]));
+
+  edges.forEach((edge) => {
+    indegree.set(edge.target, (indegree.get(edge.target) || 0) + 1);
+    outgoing.get(edge.source)?.push(edge.target);
+  });
+
+  const queue = nodes
+    .filter((node) => (indegree.get(node.id) || 0) === 0)
+    .map((node) => node.id);
+  const visited = new Set<string>();
+  const layerById = new Map(nodes.map((node) => [node.id, 0]));
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    const currentLayer = layerById.get(current) || 0;
+
+    for (const next of outgoing.get(current) || []) {
+      layerById.set(next, Math.max(layerById.get(next) || 0, currentLayer + 1));
+      indegree.set(next, (indegree.get(next) || 0) - 1);
+      if ((indegree.get(next) || 0) <= 0) {
+        queue.push(next);
+      }
+    }
+  }
+
+  nodes.forEach((node, index) => {
+    if (!visited.has(node.id)) {
+      layerById.set(node.id, index % 3);
+    }
+  });
+
+  const layers = new Map<number, GraphNode[]>();
+  nodes.forEach((node) => {
+    const layer = layerById.get(node.id) || 0;
+    const bucket = layers.get(layer) || [];
+    bucket.push(node);
+    layers.set(layer, bucket);
+  });
+
+  const orderedLayers = [...layers.entries()].sort((a, b) => a[0] - b[0]);
+  const layerCount = Math.max(orderedLayers.length, 1);
+  const maxNodesInLayer = Math.max(...orderedLayers.map(([, layerNodes]) => layerNodes.length), 1);
+  const width = GRAPH_PADDING_X * 2 + layerCount * GRAPH_NODE_WIDTH + Math.max(layerCount - 1, 0) * GRAPH_X_GAP;
+  const height = GRAPH_PADDING_Y * 2 + maxNodesInLayer * GRAPH_NODE_HEIGHT + Math.max(maxNodesInLayer - 1, 0) * GRAPH_Y_GAP;
+
+  const positionedNodes: GraphLayoutNode[] = [];
+  orderedLayers.forEach(([layerIndex, layerNodes]) => {
+    const totalLayerHeight =
+      layerNodes.length * GRAPH_NODE_HEIGHT + Math.max(layerNodes.length - 1, 0) * GRAPH_Y_GAP;
+    const startY = (height - totalLayerHeight) / 2 + GRAPH_NODE_HEIGHT / 2;
+    const x = GRAPH_PADDING_X + GRAPH_NODE_WIDTH / 2 + layerIndex * (GRAPH_NODE_WIDTH + GRAPH_X_GAP);
+
+    layerNodes.forEach((node, nodeIndex) => {
+      positionedNodes.push({
+        ...node,
+        x,
+        y: startY + nodeIndex * (GRAPH_NODE_HEIGHT + GRAPH_Y_GAP),
+      });
+    });
+  });
+
+  const positionById = Object.fromEntries(
+    positionedNodes.map((node) => [node.id, { x: node.x, y: node.y }])
+  );
+
+  return { width, height, nodes: positionedNodes, edges, positionById };
+}
+
+function getEdgeEndpoints(source: GraphPoint, target: GraphPoint) {
+  const horizontal = Math.abs(target.x - source.x) >= Math.abs(target.y - source.y);
+  if (horizontal) {
+    return {
+      start: {
+        x: source.x + (target.x >= source.x ? GRAPH_NODE_WIDTH / 2 : -GRAPH_NODE_WIDTH / 2),
+        y: source.y,
+      },
+      end: {
+        x: target.x + (target.x >= source.x ? -GRAPH_NODE_WIDTH / 2 : GRAPH_NODE_WIDTH / 2),
+        y: target.y,
+      },
+    };
+  }
+
+  return {
+    start: {
+      x: source.x,
+      y: source.y + (target.y >= source.y ? GRAPH_NODE_HEIGHT / 2 : -GRAPH_NODE_HEIGHT / 2),
+    },
+    end: {
+      x: target.x,
+      y: target.y + (target.y >= source.y ? -GRAPH_NODE_HEIGHT / 2 : GRAPH_NODE_HEIGHT / 2),
+    },
+  };
+}
+
+function buildEdgePath(start: GraphPoint, end: GraphPoint) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const horizontal = Math.abs(dx) >= Math.abs(dy);
+  const bend = horizontal
+    ? Math.max(Math.abs(dx) * 0.45, 72)
+    : Math.max(Math.abs(dy) * 0.35, 56);
+
+  if (horizontal) {
+    return `M ${start.x} ${start.y} C ${start.x + Math.sign(dx || 1) * bend} ${start.y}, ${end.x - Math.sign(dx || 1) * bend} ${end.y}, ${end.x} ${end.y}`;
+  }
+
+  return `M ${start.x} ${start.y} C ${start.x} ${start.y + Math.sign(dy || 1) * bend}, ${end.x} ${end.y - Math.sign(dy || 1) * bend}, ${end.x} ${end.y}`;
 }
 
 function ConceptGraph({
@@ -128,16 +260,20 @@ function ConceptGraph({
 }) {
   if (!graph || graph.nodes.length === 0) return null;
 
-  const positions = Object.fromEntries(
-    graph.nodes.map((node, index) => [node.id, GRAPH_POSITIONS[index] || GRAPH_POSITIONS[GRAPH_POSITIONS.length - 1]])
-  );
+  const layout = computeGraphLayout(graph);
 
   return (
     <div className="concept-graph-shell mb-8">
       <div className="concept-graph-frame">
-        <div className="concept-graph-canvas">
+        <div
+          className="concept-graph-canvas"
+          style={{
+            width: `${layout.width}px`,
+            minHeight: `${layout.height}px`,
+          }}
+        >
           <svg
-            viewBox="0 0 1000 620"
+            viewBox={`0 0 ${layout.width} ${layout.height}`}
             className="absolute inset-0 h-full w-full"
             aria-hidden="true"
           >
@@ -158,15 +294,17 @@ function ConceptGraph({
               </marker>
             </defs>
 
-            {graph.edges.map((edge, index) => {
-              const source = positions[edge.source];
-              const target = positions[edge.target];
+            {layout.edges.map((edge, index) => {
+              const source = layout.positionById[edge.source];
+              const target = layout.positionById[edge.target];
               if (!source || !target) return null;
 
-              const controlOffset = Math.max(Math.abs(target.x - source.x) * 0.35, 90);
-              const path = `M ${source.x} ${source.y} C ${source.x + controlOffset} ${source.y}, ${target.x - controlOffset} ${target.y}, ${target.x} ${target.y}`;
-              const labelX = (source.x + target.x) / 2;
-              const labelY = (source.y + target.y) / 2 - 16;
+              const { start, end } = getEdgeEndpoints(source, target);
+              const path = buildEdgePath(start, end);
+              const labelX = (start.x + end.x) / 2;
+              const labelY = (start.y + end.y) / 2 - (index % 2 === 0 ? 24 : -24);
+              const label = truncateEdgeLabel(edge.label);
+              const labelWidth = Math.max(88, Math.min(176, label.length * 7.2));
 
               return (
                 <g key={`${edge.source}-${edge.target}-${index}`}>
@@ -179,29 +317,36 @@ function ConceptGraph({
                     markerEnd="url(#graphArrow)"
                     opacity="0.9"
                   />
-                  <text
-                    x={labelX}
-                    y={labelY}
-                    textAnchor="middle"
-                    className="fill-slate-300 text-[11px] tracking-[0.18em] uppercase"
-                  >
-                    {edge.label}
-                  </text>
+                  <g transform={`translate(${labelX - labelWidth / 2}, ${labelY - 14})`}>
+                    <rect
+                      width={labelWidth}
+                      height="28"
+                      rx="14"
+                      fill="rgba(2, 6, 23, 0.92)"
+                      stroke="rgba(148, 163, 184, 0.24)"
+                    />
+                    <text
+                      x={labelWidth / 2}
+                      y="18"
+                      textAnchor="middle"
+                      className="fill-slate-300 text-[10px] tracking-[0.18em] uppercase"
+                    >
+                      {label}
+                    </text>
+                  </g>
                 </g>
               );
             })}
           </svg>
 
-          {graph.nodes.map((node) => {
-            const position = positions[node.id];
-            if (!position) return null;
+          {layout.nodes.map((node) => {
             return (
               <div
                 key={node.id}
                 className={`concept-node bg-gradient-to-br ${getGraphNodeClass(node.kind)}`}
                 style={{
-                  left: `${position.x}px`,
-                  top: `${position.y}px`,
+                  left: `${node.x}px`,
+                  top: `${node.y}px`,
                 }}
               >
                 <div className="mb-3 flex items-start justify-between gap-3">
