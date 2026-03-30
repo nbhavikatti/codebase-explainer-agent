@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 import certifi
@@ -51,9 +53,32 @@ Respond in valid JSON with this exact structure:
     {"step": 1, "path": "file/path.ext", "reason": "Why read this first"}
   ],
   "how_it_works": "A detailed explanation of how the codebase works, covering the main flows and key components",
-  "key_concepts": ["Important concept 1", "Important concept 2"]
+  "key_concepts": ["Important concept 1", "Important concept 2"],
+  "conceptual_dependency_graph": {
+    "nodes": [
+      {
+        "id": "frontend-ui",
+        "label": "Frontend UI",
+        "kind": "frontend",
+        "description": "What this concept is responsible for"
+      }
+    ],
+    "edges": [
+      {
+        "source": "frontend-ui",
+        "target": "api-layer",
+        "label": "calls"
+      }
+    ]
+  }
 }
 For tech_stack, label each technology with its role in parentheses: (frontend), (backend), (full-stack), (database), (tooling), or (devops) as appropriate.
+For conceptual_dependency_graph, create a polished concept-level architecture diagram:
+- Use concepts, capabilities, or architectural layers, not raw file names.
+- Include 4-8 nodes and 3-10 edges.
+- Base it on the repo context and architecture you infer from the files.
+- Keep ids short, unique, and kebab-case.
+- Use kinds from this set when possible: frontend, backend, data, integration, infrastructure, workflow, shared.
 Be specific and reference actual file names and code patterns you see. Do not make up files that don't exist."""
 
 CHAT_SYSTEM_PROMPT = """You are an expert software engineer helping a user understand a codebase.
@@ -92,6 +117,150 @@ Provide a comprehensive analysis in the JSON format specified."""
         response_format={"type": "json_object"},
     )
     return response.choices[0].message.content or "{}"
+
+
+def normalize_analysis_payload(raw_analysis: str) -> dict[str, Any]:
+    try:
+        analysis = json.loads(raw_analysis)
+    except json.JSONDecodeError:
+        return {"error": "Failed to parse analysis", "raw": raw_analysis}
+
+    if not isinstance(analysis, dict):
+        return {"error": "Failed to parse analysis", "raw": raw_analysis}
+
+    analysis["conceptual_dependency_graph"] = _normalize_graph(analysis)
+    return analysis
+
+
+def _normalize_graph(analysis: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    graph = analysis.get("conceptual_dependency_graph")
+    raw_nodes = graph.get("nodes", []) if isinstance(graph, dict) else []
+    raw_edges = graph.get("edges", []) if isinstance(graph, dict) else []
+
+    nodes: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for node in raw_nodes:
+        if not isinstance(node, dict):
+            continue
+        label = _clean_text(node.get("label")) or _clean_text(node.get("id"))
+        if not label:
+            continue
+        node_id = _slugify(node.get("id") or label)
+        if not node_id or node_id in seen_ids:
+            continue
+        seen_ids.add(node_id)
+        nodes.append(
+            {
+                "id": node_id,
+                "label": label[:40],
+                "kind": _clean_text(node.get("kind")) or _infer_kind(label),
+                "description": _clean_text(node.get("description"))[:140],
+            }
+        )
+
+    if not nodes:
+        nodes = _build_fallback_nodes(analysis)
+        seen_ids = {node["id"] for node in nodes}
+
+    edges: list[dict[str, str]] = []
+    for edge in raw_edges:
+        if not isinstance(edge, dict):
+            continue
+        source = _slugify(edge.get("source"))
+        target = _slugify(edge.get("target"))
+        if not source or not target or source == target:
+            continue
+        if source not in seen_ids or target not in seen_ids:
+            continue
+        edges.append(
+            {
+                "source": source,
+                "target": target,
+                "label": _clean_text(edge.get("label"))[:48] or "connects to",
+            }
+        )
+
+    if not edges:
+        edges = _build_fallback_edges(nodes)
+
+    return {"nodes": nodes[:8], "edges": edges[:10]}
+
+
+def _build_fallback_nodes(analysis: dict[str, Any]) -> list[dict[str, str]]:
+    concepts = analysis.get("key_concepts")
+    raw_labels: list[str] = []
+    if isinstance(concepts, list):
+        raw_labels.extend(_clean_text(item) for item in concepts if _clean_text(item))
+
+    for file_info in analysis.get("top_important_files", []) if isinstance(analysis.get("top_important_files"), list) else []:
+        if not isinstance(file_info, dict):
+            continue
+        description = _clean_text(file_info.get("description"))
+        if description:
+            raw_labels.append(description.split(".")[0])
+        if len(raw_labels) >= 6:
+            break
+
+    deduped: list[str] = []
+    seen_labels: set[str] = set()
+    for label in raw_labels:
+        short = label[:40]
+        if short and short.lower() not in seen_labels:
+            seen_labels.add(short.lower())
+            deduped.append(short)
+        if len(deduped) >= 6:
+            break
+
+    if not deduped:
+        deduped = ["User Interface", "Core Application", "Repository Context", "AI Analysis"]
+
+    return [
+        {
+            "id": _slugify(label),
+            "label": label,
+            "kind": _infer_kind(label),
+            "description": "",
+        }
+        for label in deduped
+    ]
+
+
+def _build_fallback_edges(nodes: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "source": nodes[index]["id"],
+            "target": nodes[index + 1]["id"],
+            "label": "informs" if index == 0 else "feeds",
+        }
+        for index in range(len(nodes) - 1)
+    ]
+
+
+def _clean_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _slugify(value: Any) -> str:
+    text = _clean_text(value).lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return text[:40]
+
+
+def _infer_kind(label: str) -> str:
+    lowered = label.lower()
+    if any(word in lowered for word in ("ui", "frontend", "client", "page", "view")):
+        return "frontend"
+    if any(word in lowered for word in ("api", "backend", "server", "service", "application")):
+        return "backend"
+    if any(word in lowered for word in ("data", "database", "cache", "storage", "repo")):
+        return "data"
+    if any(word in lowered for word in ("deploy", "infra", "build", "pipeline", "hosting")):
+        return "infrastructure"
+    if any(word in lowered for word in ("shared", "common", "util", "model", "schema")):
+        return "shared"
+    return "workflow"
 
 
 async def chat_about_repo(

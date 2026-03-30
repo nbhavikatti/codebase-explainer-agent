@@ -31,6 +31,48 @@
   .step-line {
     @apply absolute left-4 top-8 bottom-0 w-px bg-white/10;
   }
+  .concept-graph-shell {
+    @apply relative overflow-hidden border border-white/10 p-3;
+    border-radius: 1.75rem;
+    background-color: rgba(255, 255, 255, 0.03);
+    background:
+      radial-gradient(circle at top left, rgba(34, 211, 238, 0.14), transparent 34%),
+      radial-gradient(circle at top right, rgba(244, 114, 182, 0.12), transparent 30%),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.7), rgba(2, 6, 23, 0.9));
+  }
+  .concept-graph-frame {
+    @apply overflow-x-auto border border-white/10;
+    border-radius: 1.25rem;
+    background-color: rgba(2, 6, 23, 0.45);
+  }
+  .concept-graph-canvas {
+    position: relative;
+    width: 1000px;
+    min-height: 620px;
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .concept-graph-canvas::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 50% 10%, rgba(59, 130, 246, 0.18), transparent 30%),
+      radial-gradient(circle at 50% 92%, rgba(168, 85, 247, 0.12), transparent 28%);
+    pointer-events: none;
+  }
+  .concept-node {
+    position: absolute;
+    width: 220px;
+    transform: translate(-50%, -50%);
+    border-width: 1px;
+    border-radius: 1.25rem;
+    padding: 1rem;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(18px);
+  }
 }
 
 @keyframes fade-in {

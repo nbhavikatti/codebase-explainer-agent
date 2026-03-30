@@ -26,7 +26,7 @@ from app.analyzer import (
     read_file_contents,
     format_file_tree_string,
 )
-from app.llm import generate_analysis, chat_about_repo
+from app.llm import generate_analysis, chat_about_repo, normalize_analysis_payload
 
 app = FastAPI()
 
@@ -134,10 +134,7 @@ async def _analyze_stream(repo_url: str) -> AsyncGenerator[str, None]:
                 logger.error("analyze_failure | repo=%s latency=%.1fs error=llm_timeout", repo_url, time.time() - t_start)
                 await queue.put(_sse_event("error", {"message": "AI analysis timed out. Try a smaller repo or increase the server timeout."}))
                 return
-            try:
-                analysis = json.loads(analysis_json)
-            except json.JSONDecodeError:
-                analysis = {"error": "Failed to parse analysis", "raw": analysis_json}
+            analysis = normalize_analysis_payload(analysis_json)
 
             await queue.put(_sse_event("step", {"step": "llm_analysis", "message": "Analysis complete!", "done": True}))
 

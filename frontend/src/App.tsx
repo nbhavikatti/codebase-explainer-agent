@@ -14,9 +14,9 @@ import {
   ChevronDown,
   ChevronRight,
   BookOpen,
-  Layers,
   ListOrdered,
   MessageSquare,
+  Waypoints,
 } from "lucide-react";
 
 const RAW_API_URL = import.meta.env.VITE_API_URL || "";
@@ -54,6 +54,23 @@ interface AnalysisResult {
   reading_order: { step: number; path: string; reason: string }[];
   how_it_works: string;
   key_concepts: string[];
+  conceptual_dependency_graph?: {
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+  };
+}
+
+interface GraphNode {
+  id: string;
+  label: string;
+  kind: string;
+  description: string;
+}
+
+interface GraphEdge {
+  source: string;
+  target: string;
+  label: string;
 }
 
 interface ChatMessage {
@@ -66,7 +83,6 @@ const STEP_ICONS: Record<string, React.ReactNode> = {
   file_tree: <FolderTree className="w-4 h-4" />,
   detect_type: <Search className="w-4 h-4" />,
   select_files: <FileText className="w-4 h-4" />,
-  dependency_graph: <FolderTree className="w-4 h-4" />,
   read_files: <Code2 className="w-4 h-4" />,
   llm_analysis: <Brain className="w-4 h-4" />,
 };
@@ -76,10 +92,139 @@ const STEP_ORDER = [
   "file_tree",
   "detect_type",
   "select_files",
-  "dependency_graph",
   "read_files",
   "llm_analysis",
 ];
+
+const GRAPH_NODE_COLORS: Record<string, string> = {
+  frontend: "from-cyan-400/30 via-sky-400/20 to-transparent text-cyan-100 border-cyan-300/30",
+  backend: "from-emerald-400/30 via-teal-400/20 to-transparent text-emerald-100 border-emerald-300/30",
+  data: "from-amber-400/30 via-orange-400/20 to-transparent text-amber-100 border-amber-300/30",
+  integration: "from-pink-400/30 via-rose-400/20 to-transparent text-pink-100 border-pink-300/30",
+  infrastructure: "from-indigo-400/30 via-blue-400/20 to-transparent text-indigo-100 border-indigo-300/30",
+  workflow: "from-fuchsia-400/30 via-violet-400/20 to-transparent text-fuchsia-100 border-fuchsia-300/30",
+  shared: "from-slate-200/20 via-slate-300/10 to-transparent text-slate-100 border-white/20",
+};
+
+const GRAPH_POSITIONS = [
+  { x: 180, y: 140 },
+  { x: 500, y: 96 },
+  { x: 820, y: 140 },
+  { x: 300, y: 312 },
+  { x: 700, y: 312 },
+  { x: 180, y: 484 },
+  { x: 500, y: 528 },
+  { x: 820, y: 484 },
+];
+
+function getGraphNodeClass(kind: string) {
+  return GRAPH_NODE_COLORS[kind] || GRAPH_NODE_COLORS.workflow;
+}
+
+function ConceptGraph({
+  graph,
+}: {
+  graph?: AnalysisResult["conceptual_dependency_graph"];
+}) {
+  if (!graph || graph.nodes.length === 0) return null;
+
+  const positions = Object.fromEntries(
+    graph.nodes.map((node, index) => [node.id, GRAPH_POSITIONS[index] || GRAPH_POSITIONS[GRAPH_POSITIONS.length - 1]])
+  );
+
+  return (
+    <div className="concept-graph-shell mb-8">
+      <div className="concept-graph-frame">
+        <div className="concept-graph-canvas">
+          <svg
+            viewBox="0 0 1000 620"
+            className="absolute inset-0 h-full w-full"
+            aria-hidden="true"
+          >
+            <defs>
+              <linearGradient id="graphEdge" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="rgba(125, 211, 252, 0.85)" />
+                <stop offset="100%" stopColor="rgba(244, 114, 182, 0.8)" />
+              </linearGradient>
+              <marker
+                id="graphArrow"
+                markerWidth="10"
+                markerHeight="10"
+                refX="8"
+                refY="5"
+                orient="auto"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(191, 219, 254, 0.85)" />
+              </marker>
+            </defs>
+
+            {graph.edges.map((edge, index) => {
+              const source = positions[edge.source];
+              const target = positions[edge.target];
+              if (!source || !target) return null;
+
+              const controlOffset = Math.max(Math.abs(target.x - source.x) * 0.35, 90);
+              const path = `M ${source.x} ${source.y} C ${source.x + controlOffset} ${source.y}, ${target.x - controlOffset} ${target.y}, ${target.x} ${target.y}`;
+              const labelX = (source.x + target.x) / 2;
+              const labelY = (source.y + target.y) / 2 - 16;
+
+              return (
+                <g key={`${edge.source}-${edge.target}-${index}`}>
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="url(#graphEdge)"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    markerEnd="url(#graphArrow)"
+                    opacity="0.9"
+                  />
+                  <text
+                    x={labelX}
+                    y={labelY}
+                    textAnchor="middle"
+                    className="fill-slate-300 text-[11px] tracking-[0.18em] uppercase"
+                  >
+                    {edge.label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+
+          {graph.nodes.map((node) => {
+            const position = positions[node.id];
+            if (!position) return null;
+            return (
+              <div
+                key={node.id}
+                className={`concept-node bg-gradient-to-br ${getGraphNodeClass(node.kind)}`}
+                style={{
+                  left: `${position.x}px`,
+                  top: `${position.y}px`,
+                }}
+              >
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="text-sm font-semibold leading-tight text-white">
+                    {node.label}
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[10px] uppercase tracking-[0.22em] text-white/60">
+                    {node.kind}
+                  </span>
+                </div>
+                {node.description && (
+                  <p className="text-sm leading-relaxed text-white/70">
+                    {node.description}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [repoUrl, setRepoUrl] = useState("");
@@ -224,7 +369,7 @@ function App() {
 
   const tabs = [
     { id: "summary", label: "Summary", icon: <BookOpen className="w-4 h-4" /> },
-    { id: "architecture", label: "Architecture", icon: <Layers className="w-4 h-4" /> },
+    { id: "architecture", label: "Architecture", icon: <Waypoints className="w-4 h-4" /> },
     { id: "files", label: "Key Files", icon: <FileText className="w-4 h-4" /> },
     { id: "reading", label: "Reading Order", icon: <ListOrdered className="w-4 h-4" /> },
     { id: "chat", label: "Ask Questions", icon: <MessageSquare className="w-4 h-4" /> },
@@ -468,6 +613,7 @@ function App() {
                   <h3 className="text-xl font-semibold mb-4 gradient-text">
                     Architecture Overview
                   </h3>
+                  <ConceptGraph graph={analysis.conceptual_dependency_graph} />
                   <div className="text-white/70 leading-relaxed whitespace-pre-line">
                     {analysis.architecture_overview}
                   </div>
