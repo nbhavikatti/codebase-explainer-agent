@@ -81,6 +81,8 @@ interface GraphPoint {
 interface GraphLayoutNode extends GraphNode {
   x: number;
   y: number;
+  layer: number;
+  order: number;
 }
 
 interface ChatMessage {
@@ -122,6 +124,7 @@ const GRAPH_X_GAP = 170;
 const GRAPH_Y_GAP = 104;
 const GRAPH_PADDING_X = 88;
 const GRAPH_PADDING_Y = 72;
+const GRAPH_DENSE_LAYER_BOOST = 44;
 
 function getGraphNodeClass(kind: string) {
   return GRAPH_NODE_COLORS[kind] || GRAPH_NODE_COLORS.workflow;
@@ -129,6 +132,17 @@ function getGraphNodeClass(kind: string) {
 
 function truncateEdgeLabel(label: string) {
   return label.length > 24 ? `${label.slice(0, 21)}...` : label;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function rectsOverlap(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number }
+) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
 function computeGraphLayout(graph: NonNullable<AnalysisResult["conceptual_dependency_graph"]>) {
@@ -182,16 +196,80 @@ function computeGraphLayout(graph: NonNullable<AnalysisResult["conceptual_depend
     layers.set(layer, bucket);
   });
 
-  const orderedLayers = [...layers.entries()].sort((a, b) => a[0] - b[0]);
+  const incoming = new Map(nodes.map((node) => [node.id, [] as string[]]));
+  edges.forEach((edge) => {
+    incoming.get(edge.target)?.push(edge.source);
+  });
+
+  const orderedLayers = [...layers.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([layerIndex, layerNodes]) => [
+      layerIndex,
+      [...layerNodes].sort((a, b) => a.label.localeCompare(b.label)),
+    ] as const);
+
+  const orderById = new Map<string, number>();
+  orderedLayers.forEach(([, layerNodes]) => {
+    layerNodes.forEach((node, index) => orderById.set(node.id, index));
+  });
+
+  for (let pass = 0; pass < 4; pass += 1) {
+    orderedLayers.forEach(([layerIndex, layerNodes]) => {
+      layerNodes.sort((a, b) => {
+        const aNeighbors = incoming.get(a.id) || outgoing.get(a.id) || [];
+        const bNeighbors = incoming.get(b.id) || outgoing.get(b.id) || [];
+        const aScore =
+          aNeighbors.length > 0
+            ? aNeighbors.reduce((sum, neighbor) => sum + (orderById.get(neighbor) || 0), 0) / aNeighbors.length
+            : orderById.get(a.id) || 0;
+        const bScore =
+          bNeighbors.length > 0
+            ? bNeighbors.reduce((sum, neighbor) => sum + (orderById.get(neighbor) || 0), 0) / bNeighbors.length
+            : orderById.get(b.id) || 0;
+
+        if (aScore !== bScore) {
+          return aScore - bScore;
+        }
+        const aDegree = (incoming.get(a.id)?.length || 0) + (outgoing.get(a.id)?.length || 0);
+        const bDegree = (incoming.get(b.id)?.length || 0) + (outgoing.get(b.id)?.length || 0);
+        if (aDegree !== bDegree) {
+          return bDegree - aDegree;
+        }
+        return a.label.localeCompare(b.label);
+      });
+
+      layerNodes.forEach((node, index) => orderById.set(node.id, index + layerIndex * 0.01));
+    });
+  }
+
   const layerCount = Math.max(orderedLayers.length, 1);
   const maxNodesInLayer = Math.max(...orderedLayers.map(([, layerNodes]) => layerNodes.length), 1);
   const width = GRAPH_PADDING_X * 2 + layerCount * GRAPH_NODE_WIDTH + Math.max(layerCount - 1, 0) * GRAPH_X_GAP;
-  const height = GRAPH_PADDING_Y * 2 + maxNodesInLayer * GRAPH_NODE_HEIGHT + Math.max(maxNodesInLayer - 1, 0) * GRAPH_Y_GAP;
+  const denseBoost =
+    Math.max(
+      ...orderedLayers.map(
+        ([, layerNodes]) =>
+          layerNodes.length >= 3 ? (layerNodes.length - 2) * GRAPH_DENSE_LAYER_BOOST : 0
+      ),
+      0
+    );
+  const height =
+    GRAPH_PADDING_Y * 2 +
+    maxNodesInLayer * GRAPH_NODE_HEIGHT +
+    Math.max(maxNodesInLayer - 1, 0) * (GRAPH_Y_GAP + denseBoost);
 
   const positionedNodes: GraphLayoutNode[] = [];
   orderedLayers.forEach(([layerIndex, layerNodes]) => {
+    const layerEdgeCount = layerNodes.reduce(
+      (sum, node) => sum + (incoming.get(node.id)?.length || 0) + (outgoing.get(node.id)?.length || 0),
+      0
+    );
+    const dynamicGap =
+      GRAPH_Y_GAP +
+      (layerNodes.length >= 3 ? (layerNodes.length - 2) * GRAPH_DENSE_LAYER_BOOST : 0) +
+      Math.max(0, layerEdgeCount - layerNodes.length * 2) * 6;
     const totalLayerHeight =
-      layerNodes.length * GRAPH_NODE_HEIGHT + Math.max(layerNodes.length - 1, 0) * GRAPH_Y_GAP;
+      layerNodes.length * GRAPH_NODE_HEIGHT + Math.max(layerNodes.length - 1, 0) * dynamicGap;
     const startY = (height - totalLayerHeight) / 2 + GRAPH_NODE_HEIGHT / 2;
     const x = GRAPH_PADDING_X + GRAPH_NODE_WIDTH / 2 + layerIndex * (GRAPH_NODE_WIDTH + GRAPH_X_GAP);
 
@@ -199,7 +277,9 @@ function computeGraphLayout(graph: NonNullable<AnalysisResult["conceptual_depend
       positionedNodes.push({
         ...node,
         x,
-        y: startY + nodeIndex * (GRAPH_NODE_HEIGHT + GRAPH_Y_GAP),
+        y: startY + nodeIndex * (GRAPH_NODE_HEIGHT + dynamicGap),
+        layer: layerIndex,
+        order: nodeIndex,
       });
     });
   });
@@ -253,6 +333,99 @@ function buildEdgePath(start: GraphPoint, end: GraphPoint) {
   return `M ${start.x} ${start.y} C ${start.x} ${start.y + Math.sign(dy || 1) * bend}, ${end.x} ${end.y - Math.sign(dy || 1) * bend}, ${end.x} ${end.y}`;
 }
 
+function buildRoutedEdge(
+  source: GraphLayoutNode,
+  target: GraphLayoutNode,
+  edgeIndex: number
+) {
+  const { start, end } = getEdgeEndpoints(source, target);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const horizontal = Math.abs(dx) >= Math.abs(dy);
+  const sourceFan = (source.order - 1.5) * 18;
+  const targetFan = (target.order - 1.5) * 18;
+  const alternate = edgeIndex % 2 === 0 ? 1 : -1;
+  const indexFan = alternate * (16 + (edgeIndex % 3) * 10);
+
+  if (horizontal) {
+    const bend = Math.max(Math.abs(dx) * 0.38, 88);
+    const control1 = {
+      x: start.x + Math.sign(dx || 1) * bend,
+      y: start.y + sourceFan + indexFan,
+    };
+    const control2 = {
+      x: end.x - Math.sign(dx || 1) * bend,
+      y: end.y + targetFan + indexFan,
+    };
+    return {
+      path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`,
+      labelAnchor: {
+        x: (control1.x + control2.x) / 2,
+        y: (control1.y + control2.y) / 2,
+      },
+    };
+  }
+
+  const bend = Math.max(Math.abs(dy) * 0.32, 72);
+  const control1 = {
+    x: start.x + sourceFan + indexFan,
+    y: start.y + Math.sign(dy || 1) * bend,
+  };
+  const control2 = {
+    x: end.x + targetFan + indexFan,
+    y: end.y - Math.sign(dy || 1) * bend,
+  };
+  return {
+    path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`,
+    labelAnchor: {
+      x: (control1.x + control2.x) / 2,
+      y: (control1.y + control2.y) / 2,
+    },
+  };
+}
+
+function findLabelPosition(
+  anchor: GraphPoint,
+  labelWidth: number,
+  canvas: { width: number; height: number },
+  nodeRects: { left: number; top: number; right: number; bottom: number }[],
+  labelRects: { left: number; top: number; right: number; bottom: number }[],
+  index: number
+) {
+  const candidates = [
+    { x: anchor.x + 24, y: anchor.y - 28 },
+    { x: anchor.x - labelWidth - 24, y: anchor.y - 28 },
+    { x: anchor.x + 20, y: anchor.y + 10 },
+    { x: anchor.x - labelWidth - 20, y: anchor.y + 10 },
+    { x: anchor.x - labelWidth / 2, y: anchor.y - 44 - index * 2 },
+    { x: anchor.x - labelWidth / 2, y: anchor.y + 20 + index * 2 },
+  ];
+
+  for (const candidate of candidates) {
+    const rect = {
+      left: clamp(candidate.x, 12, canvas.width - labelWidth - 12),
+      top: clamp(candidate.y, 12, canvas.height - 40),
+      right: clamp(candidate.x, 12, canvas.width - labelWidth - 12) + labelWidth,
+      bottom: clamp(candidate.y, 12, canvas.height - 40) + 28,
+    };
+
+    if (nodeRects.some((nodeRect) => rectsOverlap(rect, nodeRect))) {
+      continue;
+    }
+    if (labelRects.some((labelRect) => rectsOverlap(rect, labelRect))) {
+      continue;
+    }
+    return rect;
+  }
+
+  return {
+    left: clamp(anchor.x - labelWidth / 2, 12, canvas.width - labelWidth - 12),
+    top: clamp(anchor.y - 14, 12, canvas.height - 40),
+    right: clamp(anchor.x - labelWidth / 2, 12, canvas.width - labelWidth - 12) + labelWidth,
+    bottom: clamp(anchor.y - 14, 12, canvas.height - 40) + 28,
+  };
+}
+
 function ConceptGraph({
   graph,
 }: {
@@ -261,6 +434,13 @@ function ConceptGraph({
   if (!graph || graph.nodes.length === 0) return null;
 
   const layout = computeGraphLayout(graph);
+  const nodeRects = layout.nodes.map((node) => ({
+    left: node.x - GRAPH_NODE_WIDTH / 2,
+    top: node.y - GRAPH_NODE_HEIGHT / 2,
+    right: node.x + GRAPH_NODE_WIDTH / 2,
+    bottom: node.y + GRAPH_NODE_HEIGHT / 2,
+  }));
+  const labelRects: { left: number; top: number; right: number; bottom: number }[] = [];
 
   return (
     <div className="concept-graph-shell mb-8">
@@ -295,16 +475,22 @@ function ConceptGraph({
             </defs>
 
             {layout.edges.map((edge, index) => {
-              const source = layout.positionById[edge.source];
-              const target = layout.positionById[edge.target];
+              const source = layout.nodes.find((node) => node.id === edge.source);
+              const target = layout.nodes.find((node) => node.id === edge.target);
               if (!source || !target) return null;
 
-              const { start, end } = getEdgeEndpoints(source, target);
-              const path = buildEdgePath(start, end);
-              const labelX = (start.x + end.x) / 2;
-              const labelY = (start.y + end.y) / 2 - (index % 2 === 0 ? 24 : -24);
+              const { path, labelAnchor } = buildRoutedEdge(source, target, index);
               const label = truncateEdgeLabel(edge.label);
               const labelWidth = Math.max(88, Math.min(176, label.length * 7.2));
+              const labelRect = findLabelPosition(
+                labelAnchor,
+                labelWidth,
+                { width: layout.width, height: layout.height },
+                nodeRects,
+                labelRects,
+                index
+              );
+              labelRects.push(labelRect);
 
               return (
                 <g key={`${edge.source}-${edge.target}-${index}`}>
@@ -317,7 +503,7 @@ function ConceptGraph({
                     markerEnd="url(#graphArrow)"
                     opacity="0.9"
                   />
-                  <g transform={`translate(${labelX - labelWidth / 2}, ${labelY - 14})`}>
+                  <g transform={`translate(${labelRect.left}, ${labelRect.top})`}>
                     <rect
                       width={labelWidth}
                       height="28"
