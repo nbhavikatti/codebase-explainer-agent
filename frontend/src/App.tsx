@@ -133,6 +133,28 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
   }
 }
 
+function splitSseBlocks(buffer: string, flush = false) {
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const delimiter = "\n\n";
+  const blocks: string[] = [];
+  let cursor = 0;
+
+  while (true) {
+    const next = normalized.indexOf(delimiter, cursor);
+    if (next === -1) break;
+    blocks.push(normalized.slice(cursor, next));
+    cursor = next + delimiter.length;
+  }
+
+  let remainder = normalized.slice(cursor);
+  if (flush && remainder.trim()) {
+    blocks.push(remainder);
+    remainder = "";
+  }
+
+  return { blocks, remainder };
+}
+
 const GRAPH_NODE_COLORS: Record<string, string> = {
   frontend: "from-cyan-400/30 via-sky-400/20 to-transparent text-cyan-100 border-cyan-300/30",
   backend: "from-emerald-400/30 via-teal-400/20 to-transparent text-emerald-100 border-emerald-300/30",
@@ -741,41 +763,65 @@ function App() {
       const decoder = new TextDecoder();
       if (!reader) throw new Error("No response stream");
 
+      let receivedResult = false;
       let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      const processBlocks = (rawBuffer: string, flush = false) => {
+        const { blocks, remainder } = splitSseBlocks(rawBuffer, flush);
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+        for (const block of blocks) {
+          const lines = block.split("\n");
+          let eventType = "";
+          const dataLines: string[] = [];
 
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
-            const data = JSON.parse(line.slice(6));
-            if (eventType === "step") {
-              setSteps((prev) => {
-                const existing = prev.findIndex(
-                  (s) => s.step === data.step && !s.done
-                );
-                if (existing >= 0 && data.done) {
-                  const updated = [...prev];
-                  updated[existing] = data;
-                  return updated;
-                }
-                if (existing >= 0) return prev;
-                return [...prev, data];
-              });
-            } else if (eventType === "result") {
-              setAnalysis(data.analysis);
-            } else if (eventType === "error") {
-              setError(data.message);
+          for (const line of lines) {
+            if (line.startsWith("event:")) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+              dataLines.push(line.slice(5).trimStart());
             }
           }
+
+          if (dataLines.length === 0) {
+            continue;
+          }
+
+          const data = JSON.parse(dataLines.join("\n"));
+          if (eventType === "step") {
+            setSteps((prev) => {
+              const existing = prev.findIndex(
+                (s) => s.step === data.step && !s.done
+              );
+              if (existing >= 0 && data.done) {
+                const updated = [...prev];
+                updated[existing] = data;
+                return updated;
+              }
+              if (existing >= 0) return prev;
+              return [...prev, data];
+            });
+          } else if (eventType === "result") {
+            receivedResult = true;
+            setAnalysis(data.analysis);
+          } else if (eventType === "error") {
+            setError(data.message);
+          }
         }
+
+        return remainder;
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        buffer = processBlocks(buffer, done);
+
+        if (done) {
+          break;
+        }
+      }
+
+      if (!receivedResult) {
+        throw new Error("Analysis stream ended before results arrived.");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "An error occurred");
