@@ -359,10 +359,7 @@ function buildRoutedEdge(
     };
     return {
       path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`,
-      labelAnchor: {
-        x: (control1.x + control2.x) / 2,
-        y: (control1.y + control2.y) / 2,
-      },
+      curve: { start, control1, control2, end },
     };
   }
 
@@ -377,29 +374,80 @@ function buildRoutedEdge(
   };
   return {
     path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`,
-    labelAnchor: {
-      x: (control1.x + control2.x) / 2,
-      y: (control1.y + control2.y) / 2,
-    },
+    curve: { start, control1, control2, end },
+  };
+}
+
+function cubicBezierPoint(
+  start: GraphPoint,
+  control1: GraphPoint,
+  control2: GraphPoint,
+  end: GraphPoint,
+  t: number
+) {
+  const mt = 1 - t;
+  return {
+    x:
+      mt * mt * mt * start.x +
+      3 * mt * mt * t * control1.x +
+      3 * mt * t * t * control2.x +
+      t * t * t * end.x,
+    y:
+      mt * mt * mt * start.y +
+      3 * mt * mt * t * control1.y +
+      3 * mt * t * t * control2.y +
+      t * t * t * end.y,
+  };
+}
+
+function cubicBezierTangent(
+  start: GraphPoint,
+  control1: GraphPoint,
+  control2: GraphPoint,
+  end: GraphPoint,
+  t: number
+) {
+  const mt = 1 - t;
+  return {
+    x:
+      3 * mt * mt * (control1.x - start.x) +
+      6 * mt * t * (control2.x - control1.x) +
+      3 * t * t * (end.x - control2.x),
+    y:
+      3 * mt * mt * (control1.y - start.y) +
+      6 * mt * t * (control2.y - control1.y) +
+      3 * t * t * (end.y - control2.y),
   };
 }
 
 function findLabelPosition(
-  anchor: GraphPoint,
+  curve: { start: GraphPoint; control1: GraphPoint; control2: GraphPoint; end: GraphPoint },
   labelWidth: number,
   canvas: { width: number; height: number },
   nodeRects: { left: number; top: number; right: number; bottom: number }[],
   labelRects: { left: number; top: number; right: number; bottom: number }[],
   index: number
 ) {
-  const candidates = [
-    { x: anchor.x + 24, y: anchor.y - 28 },
-    { x: anchor.x - labelWidth - 24, y: anchor.y - 28 },
-    { x: anchor.x + 20, y: anchor.y + 10 },
-    { x: anchor.x - labelWidth - 20, y: anchor.y + 10 },
-    { x: anchor.x - labelWidth / 2, y: anchor.y - 44 - index * 2 },
-    { x: anchor.x - labelWidth / 2, y: anchor.y + 20 + index * 2 },
-  ];
+  const tValues = [0.42, 0.5, 0.58, 0.46, 0.54];
+  const candidates: { x: number; y: number }[] = [];
+
+  tValues.forEach((t, tIndex) => {
+    const point = cubicBezierPoint(curve.start, curve.control1, curve.control2, curve.end, t);
+    const tangent = cubicBezierTangent(curve.start, curve.control1, curve.control2, curve.end, t);
+    const tangentLength = Math.hypot(tangent.x, tangent.y) || 1;
+    const normal = {
+      x: -tangent.y / tangentLength,
+      y: tangent.x / tangentLength,
+    };
+    const side = (index + tIndex) % 2 === 0 ? 1 : -1;
+    const distance = 18 + tIndex * 10;
+    const along = (t - 0.5) * 28;
+
+    candidates.push({
+      x: point.x + normal.x * distance * side + (tangent.x / tangentLength) * along - labelWidth / 2,
+      y: point.y + normal.y * distance * side + (tangent.y / tangentLength) * along - 14,
+    });
+  });
 
   for (const candidate of candidates) {
     const rect = {
@@ -418,11 +466,12 @@ function findLabelPosition(
     return rect;
   }
 
+  const midpoint = cubicBezierPoint(curve.start, curve.control1, curve.control2, curve.end, 0.5);
   return {
-    left: clamp(anchor.x - labelWidth / 2, 12, canvas.width - labelWidth - 12),
-    top: clamp(anchor.y - 14, 12, canvas.height - 40),
-    right: clamp(anchor.x - labelWidth / 2, 12, canvas.width - labelWidth - 12) + labelWidth,
-    bottom: clamp(anchor.y - 14, 12, canvas.height - 40) + 28,
+    left: clamp(midpoint.x - labelWidth / 2, 12, canvas.width - labelWidth - 12),
+    top: clamp(midpoint.y - 14 + (index % 2 === 0 ? -22 : 22), 12, canvas.height - 40),
+    right: clamp(midpoint.x - labelWidth / 2, 12, canvas.width - labelWidth - 12) + labelWidth,
+    bottom: clamp(midpoint.y - 14 + (index % 2 === 0 ? -22 : 22), 12, canvas.height - 40) + 28,
   };
 }
 
@@ -479,11 +528,11 @@ function ConceptGraph({
               const target = layout.nodes.find((node) => node.id === edge.target);
               if (!source || !target) return null;
 
-              const { path, labelAnchor } = buildRoutedEdge(source, target, index);
+              const { path, curve } = buildRoutedEdge(source, target, index);
               const label = truncateEdgeLabel(edge.label);
               const labelWidth = Math.max(88, Math.min(176, label.length * 7.2));
               const labelRect = findLabelPosition(
-                labelAnchor,
+                curve,
                 labelWidth,
                 { width: layout.width, height: layout.height },
                 nodeRects,
