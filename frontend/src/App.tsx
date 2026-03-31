@@ -90,7 +90,13 @@ interface ChatMessage {
   content: string;
 }
 
+const CONNECTING_STEP = "connecting";
+const WAKE_TIMEOUT_MS = 2500;
+const ANALYZE_TIMEOUT_MS = 15000;
+const WAKE_RETRY_DELAY_MS = 1800;
+
 const STEP_ICONS: Record<string, React.ReactNode> = {
+  connecting: <Loader2 className="w-4 h-4" />,
   cloning: <GitBranch className="w-4 h-4" />,
   file_tree: <FolderTree className="w-4 h-4" />,
   detect_type: <Search className="w-4 h-4" />,
@@ -100,6 +106,7 @@ const STEP_ICONS: Record<string, React.ReactNode> = {
 };
 
 const STEP_ORDER = [
+  CONNECTING_STEP,
   "cloning",
   "file_tree",
   "detect_type",
@@ -107,6 +114,24 @@ const STEP_ORDER = [
   "read_files",
   "llm_analysis",
 ];
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 const GRAPH_NODE_COLORS: Record<string, string> = {
   frontend: "from-cyan-400/30 via-sky-400/20 to-transparent text-cyan-100 border-cyan-300/30",
@@ -628,23 +653,89 @@ function App() {
     if (!repoUrl.trim() || isAnalyzing) return;
 
     setIsAnalyzing(true);
-    setSteps([]);
+    setSteps([
+      {
+        step: CONNECTING_STEP,
+        message: "Connecting to backend...",
+      },
+    ]);
     setAnalysis(null);
     setError(null);
     setChatMessages([]);
     analyzedUrlRef.current = repoUrl.trim();
 
     try {
-      const response = await fetch(`${API_URL}/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
-        body: JSON.stringify({ repo_url: repoUrl.trim() }),
-      });
+      const updateConnectingStep = (message: string, done = false) => {
+        setSteps((prev) => {
+          const rest = prev.filter((step) => step.step !== CONNECTING_STEP);
+          return [{ step: CONNECTING_STEP, message, done }, ...rest];
+        });
+      };
+
+      const verifyBackendReady = async () => {
+        try {
+          const response = await fetchWithTimeout(
+            `${API_URL}/healthz`,
+            {
+              method: "GET",
+              headers: { ...AUTH_HEADERS },
+            },
+            WAKE_TIMEOUT_MS
+          );
+          return response.ok;
+        } catch {
+          return false;
+        }
+      };
+
+      const requestAnalyzeStream = async (attempt: number) => {
+        const isRetry = attempt > 0;
+        updateConnectingStep(
+          isRetry
+            ? "Retrying analysis connection..."
+            : "Connecting to backend..."
+        );
+
+        const ready = await verifyBackendReady();
+        if (!ready) {
+          updateConnectingStep("Waking backend server...");
+        } else {
+          updateConnectingStep("Backend ready. Starting analysis...");
+        }
+
+        try {
+          return await fetchWithTimeout(
+            `${API_URL}/analyze`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
+              body: JSON.stringify({ repo_url: repoUrl.trim() }),
+            },
+            ANALYZE_TIMEOUT_MS
+          );
+        } catch (error) {
+          if (!(error instanceof DOMException && error.name === "AbortError")) {
+            throw error;
+          }
+
+          if (attempt >= 1) {
+            throw new Error("Backend is still waking up. Please try again in a few seconds.");
+          }
+
+          updateConnectingStep("Backend is waking up. Retrying...");
+          await sleep(WAKE_RETRY_DELAY_MS);
+          return requestAnalyzeStream(attempt + 1);
+        }
+      };
+
+      const response = await requestAnalyzeStream(0);
 
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.detail || "Failed to start analysis");
       }
+
+      updateConnectingStep("Analysis stream connected", true);
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
