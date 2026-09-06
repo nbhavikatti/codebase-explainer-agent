@@ -106,17 +106,23 @@ Free instances spin down after 15 minutes of inactivity and take roughly a minut
 to wake. The frontend handles this: it pings `/healthz` first and shows wake-up
 progress before starting the analysis.
 
-### Frontend (Cloudflare Pages)
+### Frontend (Cloudflare Workers)
+
+Cloudflare routes new Git-connected projects through Workers rather than Pages,
+so `wrangler.jsonc` declares an assets-only Worker — no server code, just the
+Vite output. SPA routing comes from `not_found_handling`, not a `_redirects`
+file; adding one alongside it fails the deploy as a redirect loop.
 
 | Setting | Value |
 |---|---|
-| Root directory | *(repo root)* |
 | Build command | `npm --prefix frontend ci && npm --prefix frontend run build` |
-| Output directory | `backend/static` |
-| Env var | `VITE_API_URL` = the Render service URL |
+| Deploy command | `npx wrangler deploy` |
+| Build var | `VITE_API_URL` = the Render service URL |
 
-The output directory looks odd but is intentional — Vite already builds into
-`backend/static` (see `vite.config.ts`), so the same build both deploys to Pages
-and stays committed as a fallback the Render service can serve on its own.
-`VITE_API_URL` is baked in at build time, so changing it requires a redeploy.
-`public/_redirects` gives Pages the SPA fallback.
+The assets directory is `backend/static` because that's where Vite already
+builds (see `vite.config.ts`), so one build both deploys to Cloudflare and stays
+committed as a fallback the Render service can serve on its own.
+
+`VITE_API_URL` is compiled into the bundle at build time, not read at runtime —
+changing it requires a rebuild, and if it's missing the frontend silently falls
+back to same-origin requests that 404.
