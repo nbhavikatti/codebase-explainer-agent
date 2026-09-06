@@ -1,0 +1,13 @@
+{
+  // Static-asset-only Worker: no server code, just the Vite build output.
+  // The API lives separately on Render (see render.yaml).
+  "name": "codebase-explainer-agent",
+  "compatibility_date": "2026-09-06",
+  "assets": {
+    // Vite builds here (frontend/vite.config.ts), which doubles as the
+    // fallback bundle the Render service serves on its own.
+    "directory": "./backend/static",
+    // Serve index.html for unmatched paths so deep links don't 404.
+    "not_found_handling": "single-page-application"
+  }
+}
