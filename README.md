@@ -8,7 +8,7 @@ An AI-powered web app that analyzes public GitHub repositories and generates com
 
 **Backend:** Python, FastAPI, OpenAI API (gpt-4o-mini), Uvicorn<br>
 **Frontend:** React, TypeScript, Vite, Tailwind CSS<br>
-**Deployment:** Nixpacks, Heroku-compatible
+**Deployment:** Cloudflare Pages (frontend) + Render (backend); Nixpacks/Procfile also present
 
 ## Project Structure
 
@@ -83,4 +83,40 @@ For production, build the frontend and run only the backend — it serves the st
 |---|---|---|
 | `OPENAI_API_KEY` | Yes | OpenAI API key (set in env or `backend/.env`) |
 | `PORT` | No | Server port (defaults to 8000) |
-| `VITE_API_URL` | No | Custom API URL for the frontend |
+| `VITE_API_URL` | No | Backend origin for the frontend. Empty in dev (Vite proxies to `:8000`); set to the Render URL for the Cloudflare Pages build |
+
+## Deployment
+
+The app is split across two free tiers: the static frontend on Cloudflare Pages
+(always warm, so the page loads instantly) and the FastAPI backend on a Render
+free web service.
+
+The backend must run as a single persistent process — `_repo_cache` and the rate
+limiter both live in memory, and `/analyze` holds an SSE stream open for up to
+three minutes. Serverless function platforms won't work for it.
+
+### Backend (Render)
+
+`render.yaml` is a Blueprint — point Render at this repo and it picks up the
+build/start commands, Python version, and health check path. Set `OPENAI_API_KEY`
+in the dashboard; it's deliberately marked `sync: false` so the key never lands
+in git.
+
+Free instances spin down after 15 minutes of inactivity and take roughly a minute
+to wake. The frontend handles this: it pings `/healthz` first and shows wake-up
+progress before starting the analysis.
+
+### Frontend (Cloudflare Pages)
+
+| Setting | Value |
+|---|---|
+| Root directory | *(repo root)* |
+| Build command | `npm --prefix frontend ci && npm --prefix frontend run build` |
+| Output directory | `backend/static` |
+| Env var | `VITE_API_URL` = the Render service URL |
+
+The output directory looks odd but is intentional — Vite already builds into
+`backend/static` (see `vite.config.ts`), so the same build both deploys to Pages
+and stays committed as a fallback the Render service can serve on its own.
+`VITE_API_URL` is baked in at build time, so changing it requires a redeploy.
+`public/_redirects` gives Pages the SPA fallback.

@@ -50,6 +50,22 @@ _request_log: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMIT_MSG = "Rate limit reached. Please wait a few minutes and try again."
 
 
+def _client_ip(req: Request) -> str:
+    """Real client IP, accounting for the platform load balancer.
+
+    Behind a proxy, req.client.host is the proxy itself, which would put every
+    visitor in the same rate limit bucket. The proxy appends the address it
+    observed to the end of X-Forwarded-For, so the rightmost entry is the one
+    value in that header a client can't spoof by sending its own.
+    """
+    forwarded = req.headers.get("x-forwarded-for")
+    if forwarded:
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        if hops:
+            return hops[-1]
+    return req.client.host if req.client else "unknown"
+
+
 def _check_rate_limit(ip: str, endpoint: str) -> None:
     config = _rate_limits.get(endpoint)
     if not config:
@@ -183,7 +199,7 @@ async def healthz():
 
 @app.post("/analyze")
 async def analyze(request: AnalyzeRequest, req: Request):
-    _check_rate_limit(req.client.host if req.client else "unknown", "/analyze")
+    _check_rate_limit(_client_ip(req), "/analyze")
     repo_url = request.repo_url.strip()
     if not repo_url.startswith("https://github.com/"):
         raise HTTPException(status_code=400, detail="Please provide a valid public GitHub URL")
@@ -201,7 +217,7 @@ async def analyze(request: AnalyzeRequest, req: Request):
 
 @app.post("/chat")
 async def chat(request: ChatRequest, req: Request):
-    _check_rate_limit(req.client.host if req.client else "unknown", "/chat")
+    _check_rate_limit(_client_ip(req), "/chat")
     repo_url = request.repo_url.strip()
     if repo_url not in _repo_cache:
         raise HTTPException(status_code=404, detail="Repository not analyzed yet. Please analyze it first.")
